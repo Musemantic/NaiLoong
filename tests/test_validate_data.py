@@ -1,0 +1,150 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from scripts.validate_data import validate_data
+
+
+class ValidateDataTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        (self.root / "data" / "naiwa").mkdir(parents=True)
+        self.write_json(
+            "data/manifest.json",
+            [
+                {
+                    "id": "naiwa",
+                    "name": "奶蛙",
+                    "subcategories": [
+                        {"id": "animated", "name": "动图", "file": "naiwa/animated.json"},
+                        {"id": "static", "name": "静态图", "file": "naiwa/static.json"},
+                    ],
+                }
+            ],
+        )
+        self.write_json(
+            "data/naiwa/tags.json",
+            {"smile": {"0": "憋笑", "1": "大笑"}, "safety": {"0": "安全"}},
+        )
+        self.write_json(
+            "data/naiwa/animated.json",
+            [
+                {
+                    "title": "奶蛙大笑",
+                    "tags": [1, 0],
+                    "url": "https://github.com/contributor/NaiLoong/blob/image/assets/memes/meme.png",
+                }
+            ],
+        )
+        self.write_json("data/naiwa/static.json", [])
+
+    def write_json(self, relative_path, value):
+        path = self.root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+
+    def test_accepts_manifest_entries_tags_and_fork_urls(self):
+        self.assertEqual(validate_data(self.root), [])
+
+    def test_accepts_dimension_local_ids_and_labels(self):
+        entries = json.loads((self.root / "data/naiwa/animated.json").read_text(encoding="utf-8"))
+        entries[0]["tags"] = {"smile": "大笑", "safety": 0}
+        self.write_json("data/naiwa/animated.json", entries)
+
+        self.assertEqual(validate_data(self.root), [])
+
+    def test_accepts_unknown_dimension_as_null(self):
+        entries = json.loads((self.root / "data/naiwa/animated.json").read_text(encoding="utf-8"))
+        entries[0]["tags"] = [1, None]
+        self.write_json("data/naiwa/animated.json", entries)
+
+        self.assertEqual(validate_data(self.root), [])
+
+    def test_rejects_flattened_tag_values(self):
+        entries = json.loads((self.root / "data/naiwa/animated.json").read_text(encoding="utf-8"))
+        entries[0]["tags"] = [1, 2]
+        self.write_json("data/naiwa/animated.json", entries)
+
+        errors = validate_data(self.root)
+        self.assertTrue(any("tags value for 'safety'" in error for error in errors))
+
+    def test_rejects_missing_manifest_file(self):
+        manifest = json.loads((self.root / "data/manifest.json").read_text(encoding="utf-8"))
+        manifest[0]["subcategories"][0]["file"] = "naiwa/missing.json"
+        self.write_json("data/manifest.json", manifest)
+
+        errors = validate_data(self.root)
+        self.assertTrue(any("referenced file not found" in error for error in errors))
+
+    def test_rejects_role_ids_that_are_not_url_safe_slugs(self):
+        manifest = json.loads((self.root / "data/manifest.json").read_text(encoding="utf-8"))
+        manifest[0]["id"] = "Nai Wa"
+        self.write_json("data/manifest.json", manifest)
+
+        errors = validate_data(self.root)
+        self.assertTrue(any("id must use lowercase letters" in error for error in errors))
+
+    def test_accepts_fork_image_url_without_network_check(self):
+        entries = json.loads((self.root / "data/naiwa/animated.json").read_text(encoding="utf-8"))
+        entries[0]["url"] = "https://github.com/contributor/NaiLoong/blob/image/assets/memes/not-found.png"
+        self.write_json("data/naiwa/animated.json", entries)
+
+        errors = validate_data(self.root)
+        self.assertEqual(errors, [])
+
+    def test_rejects_tag_array_with_wrong_dimension_count(self):
+        entries = json.loads((self.root / "data/naiwa/animated.json").read_text(encoding="utf-8"))
+        entries[0]["tags"] = [1]
+        self.write_json("data/naiwa/animated.json", entries)
+
+        errors = validate_data(self.root)
+        self.assertTrue(any("one value per tag dimension" in error for error in errors))
+
+    def test_accepts_null_in_dimension_object(self):
+        entries = json.loads((self.root / "data/naiwa/animated.json").read_text(encoding="utf-8"))
+        entries[0]["tags"] = {"smile": 1, "safety": None}
+        self.write_json("data/naiwa/animated.json", entries)
+
+        self.assertEqual(validate_data(self.root), [])
+
+    def test_rejects_non_fork_image_url(self):
+        entries = json.loads((self.root / "data/naiwa/animated.json").read_text(encoding="utf-8"))
+        entries[0]["url"] = "https://github.com/contributor/NaiLoong/blob/main/assets/meme.png"
+        self.write_json("data/naiwa/animated.json", entries)
+
+        errors = validate_data(self.root)
+        self.assertTrue(any("blob/image" in error for error in errors))
+
+    def test_rejects_duplicate_image_urls(self):
+        entries = json.loads((self.root / "data/naiwa/animated.json").read_text(encoding="utf-8"))
+        entries.append(
+            {
+                "title": "重复图片",
+                "tags": [0, None],
+                "url": entries[0]["url"],
+            }
+        )
+        self.write_json("data/naiwa/animated.json", entries)
+
+        errors = validate_data(self.root)
+        self.assertTrue(any("duplicate image URL" in error for error in errors))
+
+    def test_rejects_duplicate_json_keys(self):
+        path = self.root / "data/naiwa/animated.json"
+        path.write_text('[{"title":"first","title":"second","tags":[],"url":"https://example.com/meme.png"}]', encoding="utf-8")
+
+        errors = validate_data(self.root)
+        self.assertTrue(any("duplicate JSON key 'title'" in error for error in errors))
+
+    def test_rejects_unreferenced_entry_files(self):
+        self.write_json("data/naiwa/unused.json", [])
+
+        errors = validate_data(self.root)
+        self.assertTrue(any("entry file is not referenced by manifest" in error for error in errors))
+
+
+if __name__ == "__main__":
+    unittest.main()

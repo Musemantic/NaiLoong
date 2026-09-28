@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>奶-hub · NaiLoong — 分布式表情包仓库</title>
+  <meta name="description" content="奶-hub（NaiLoong）：奶蛙、奶蛋表情合集，顺便带你走完 Fork → PR 的首次 GitHub 贡献流程。">
+  <meta name="color-scheme" content="dark light">
+  <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主内容</a>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#/">
+        <span class="brand-mark" aria-hidden="true">🍼</span>
+        <span class="brand-name">奶-hub</span>
+        <span class="brand-sub">NaiLoong</span>
+      </a>
+
+      <nav class="header-nav" aria-label="主导航">
+        <a class="btn btn-ghost" href="#gallery">表情库</a>
+        <a class="btn btn-ghost" href="#contribute">如何贡献</a>
+        <a class="btn btn-ghost" data-repo-link href="#" rel="noopener">仓库主页</a>
+      </nav>
+
+      <div class="header-actions">
+        <form class="search-field" id="searchForm" role="search" autocomplete="off">
+          <button class="search-submit" type="submit" aria-label="搜索">
+            <svg class="search-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path fill="currentColor" d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"></path>
+            </svg>
+          </button>
+          <input id="searchInput" type="search" placeholder="搜索标题 / 标签…（回车搜索）" autocomplete="off" spellcheck="false" aria-label="搜索表情，按回车执行">
+          <kbd>/</kbd>
+        </form>
+
+        <button id="themeToggle" class="btn btn-ghost icon-btn" type="button" aria-label="切换配色主题" title="切换配色主题">
+          <span id="themeIcon" aria-hidden="true">🌗</span>
+        </button>
+
+        <a class="btn btn-secondary hide-sm" data-repo-link href="#" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <section class="hero" id="top">
+    <div class="hero-aurora" aria-hidden="true"></div>
+    <div class="container hero-inner">
+      <div class="hero-copy">
+        <span class="badge badge-open">
+          <span class="dot" aria-hidden="true"></span>
+          PRs Welcome
+        </span>
+        <h1 class="hero-title">变化永恒，<br><span class="hero-accent">奶龙</span> 助你领先。</h1>
+        <p class="hero-lead">
+          图片存在你自己的 fork 里，主仓库只多一行 JSON。照着下面四步做，你就完成了第一次&nbsp;Pull&nbsp;Request。
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#contribute">开始贡献</a>
+          <a class="btn btn-secondary" href="#gallery">浏览表情</a>
+        </div>
+        <dl class="hero-stats">
+          <div class="stat"><dt>表情总数</dt><dd id="statItems">0</dd></div>
+          <div class="stat"><dt>角色总数</dt><dd id="statChars">0</dd></div>
+          <div class="stat"><dt>标签总数</dt><dd id="statTags">0</dd></div>
+        </dl>
+      </div>
+      <div class="hero-visual" aria-hidden="true">
+        <div class="hero-tile t1"><img src="assets/placeholders/naiwa_laugh.gif" alt=""></div>
+        <div class="hero-tile t2"><img src="assets/placeholders/naiwa-wow.svg" alt=""></div>
+        <div class="hero-tile t3"><img src="assets/placeholders/naidan-wave.svg" alt=""></div>
+        <div class="hero-tile t4"><img src="assets/placeholders/naiwa-tilt.svg" alt=""></div>
+      </div>
+    </div>
+  </section>
+
+  <main id="main" class="container layout" tabindex="-1">
+    <aside class="sidebar" aria-label="角色导航">
+      <p class="sidebar-title">角色</p>
+      <nav class="sidebar-nav" id="sidebarNav"></nav>
+      <div class="sidebar-note reveal">
+        <p>想加新角色？开个 Issue 写角色名，维护者会给你建数据目录。</p>
+        <a class="link" data-repo-link data-repo-suffix="/issues/new" href="#" rel="noopener">提交角色申请 →</a>
+      </div>
+    </aside>
+
+    <div class="content" id="gallery">
+      <div class="toolbar">
+        <div class="tabs" id="subTabs" role="tablist" aria-label="表情类型"></div>
+        <div class="toolbar-meta">
+          <span class="count" id="resultCount">—</span>
+          <button class="btn btn-ghost btn-sm" id="clearFilters" type="button" hidden>清除筛选</button>
+        </div>
+      </div>
+
+      <div class="tag-panel" id="tagPanel" aria-label="标签筛选"></div>
+
+      <div class="grid" id="grid" aria-live="polite"></div>
+
+      <div class="pager pager-bottom" id="pagerBottom" aria-label="分页导航"></div>
+
+      <div class="empty-state" id="emptyState" hidden>
+        <div class="empty-icon" aria-hidden="true">🔍</div>
+        <h3>没找到匹配的表情</h3>
+        <p>换个关键词，或者点掉几个标签试试。</p>
+        <button class="btn btn-secondary" id="emptyReset" type="button">重置筛选</button>
+      </div>
+
+      <div class="empty-state" id="errorState" hidden>
+        <div class="empty-icon" aria-hidden="true">🚨</div>
+        <h3>数据加载失败</h3>
+        <p id="errorMsg">请检查网络，或稍后重试。</p>
+        <button class="btn btn-primary" id="retryBtn" type="button">重新加载</button>
+      </div>
+    </div>
+  </main>
+
+  <section class="contribute" id="contribute">
+    <div class="container">
+      <div class="section-head reveal">
+        <p class="eyebrow">Contribute</p>
+        <h2 class="section-title">选择你的贡献方式</h2>
+        <p class="section-lead">分享一张表情、练习一次 GitHub 投稿，或直接改进网站和项目。</p>
+      </div>
+
+      <ol class="quest">
+        <li class="quest-card reveal">
+          <span class="quest-num">01</span>
+          <h3>直接分享表情</h3>
+          <p>在置顶投稿 Issue 的评论区上传图片并填写简单信息。不需要安装 Git 或编辑 JSON。</p>
+          <a class="link" data-repo-link data-repo-suffix="/issues?q=is%3Aissue+is%3Aopen+label%3Asubmission" href="#" rel="noopener">打开社区投稿区 →</a>
+          <p><a class="link" data-repo-link data-repo-suffix="/blob/main/docs/meme-submissions.md" href="#" rel="noopener">查看投稿格式</a></p>
+        </li>
+        <li class="quest-card reveal">
+          <span class="quest-num">02</span>
+          <h3>学习 GitHub 投稿</h3>
+          <p>跟着教程完成 Fork、Git Bash、分支、commit 和 Pull Request，也包含更新他人条目与解决冲突。</p>
+          <a class="link" data-repo-link data-repo-suffix="/blob/main/docs/github-beginner-guide.md" href="#" rel="noopener">打开新手教程 →</a>
+        </li>
+        <li class="quest-card reveal">
+          <span class="quest-num">03</span>
+          <h3>改进项目本身</h3>
+          <p>了解网站模块、数据约定、本地运行方式、自动测试和发布流程。</p>
+          <a class="link" data-repo-link data-repo-suffix="/blob/main/docs/project-maintainers-guide.md" href="#" rel="noopener">打开项目开发指南 →</a>
+        </li>
+      </ol>
+
+      <p class="quest-help reveal">
+        不确定从哪里开始？查看 <a class="link" data-repo-link data-repo-suffix="/blob/main/CONTRIBUTING.md" href="#" rel="noopener">贡献指南总览</a>，或到
+        <a class="link" data-repo-link data-repo-suffix="/issues/new" href="#" rel="noopener">Issue 页面提问 →</a>
+      </p>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p>🍼🐲 <strong>奶-hub / NaiLoong</strong> — MIT License · 内容全部来自社区 PR</p>
+      <p class="footer-links">
+        <a class="link" data-repo-link href="#" rel="noopener">GitHub</a>
+        <a class="link" href="LICENSE">License</a>
+        <a class="link" data-repo-link data-repo-suffix="/issues/new" href="#" rel="noopener">反馈</a>
+      </p>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <noscript>
+    <div class="noscript">本站需要启用 JavaScript 才能渲染表情数据。</div>
+  </noscript>
+
+  <script src="assets/js/search.js"></script>
+  <script src="assets/js/ghimg.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
