@@ -3,7 +3,7 @@
     "id": "naiwa",
     "name": "奶蛙",
     "icon": "🍼🐸",
-    "desc": "奶-hub中的大明星，人见人爱。哈哈哈哈哈~",
+    "desc": "奶-hub的大明星，人见人爱。咳哈哈哈哈~",
     "subcategories": [
       { "id": "animated", "name": "动图", "file": "naiwa/animated.json" },
       { "id": "static", "name": "静态图", "file": "naiwa/static.json" }

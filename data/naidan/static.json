@@ -1,17 +1,2 @@
 [
-  {
-    "title": "奶蛋微笑",
-    "tags": [2, 0, 0],
-    "url": "assets/placeholders/naidan-happy.svg"
-  },
-  {
-    "title": "奶蛋困惑",
-    "tags": [0, 0, 0],
-    "url": "assets/placeholders/naidan-confused.svg"
-  },
-  {
-    "title": "奶蛋捂脸",
-    "tags": [1, 0, 1],
-    "url": "assets/placeholders/naidan-facepalm.svg"
-  }
 ]
