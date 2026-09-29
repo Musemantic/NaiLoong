@@ -191,7 +191,7 @@ class GitHub:
             raise BotError("GITHUB_TOKEN is required")
         self.repository = os.environ.get("GITHUB_REPOSITORY", REPOSITORY)
 
-    def request(self, method: str, path: str, payload=None):
+    def request(self, method: str, path: str, payload=None, accept=None):
         url = API_ROOT + path
         body = None if payload is None else json.dumps(payload).encode("utf-8")
         request = Request(
@@ -199,7 +199,7 @@ class GitHub:
             data=body,
             method=method,
             headers={
-                "Accept": "application/vnd.github+json",
+                "Accept": accept or "application/vnd.github+json",
                 "Authorization": f"Bearer {self.token}",
                 "Content-Type": "application/json",
                 "User-Agent": "NaiLoong-meme-hash-bot",
@@ -359,7 +359,11 @@ class GitHub:
         )
 
     def get_issue_comment(self, comment_id):
-        return self.request("GET", f"/repos/{self.repository}/issues/comments/{comment_id}")
+        return self.request(
+            "GET",
+            f"/repos/{self.repository}/issues/comments/{comment_id}",
+            accept="application/vnd.github.full+json",
+        )
 
     def find_marked_comment(self, issue_number, marker):
         for comment in self.get_issue_comments(issue_number):
@@ -409,10 +413,6 @@ def fetch_image_bytes(url: str, attachment=False) -> bytes:
         raise BotError("Fork images must be fetched from raw.githubusercontent.com")
 
     headers = {"User-Agent": "NaiLoong-meme-hash-bot", "Accept": "image/*"}
-    # GitHub comment attachments can redirect to private-user-images. The token
-    # is only sent to the allowlisted GitHub attachment hosts above.
-    if attachment and os.environ.get("GITHUB_TOKEN"):
-        headers["Authorization"] = f"Bearer {os.environ['GITHUB_TOKEN']}"
     request = Request(url, headers=headers)
     try:
         with urlopen(request, timeout=25) as response:
@@ -563,8 +563,11 @@ def handle_issue_comment(github: GitHub, event):
     if event.get("action") == "edited" and (event.get("sender") or {}).get("type") == "Bot":
         return
 
-    urls = parse_issue_image_urls(comment.get("body", ""))
-    current_status = comment_status(comment.get("body", ""))
+    full_comment = github.get_issue_comment(comment["id"])
+    comment_body = full_comment.get("body", comment.get("body", ""))
+    html_body = full_comment.get("body_html") or ""
+    urls = parse_issue_image_urls(html_body or comment_body)
+    current_status = comment_status(comment_body)
     if not urls and current_status is None:
         return
     initial_state, _ = github.load_state()

@@ -102,7 +102,7 @@ node tests/ghimg.test.js
 
 图片成功认领后先写入 GitHub Actions Cache。Cache key 使用共同前缀和 UTC 时间戳后缀，workflow concurrency 保证任何读写都等待前一个任务完成；任务结束保存新 cache 并删除旧 cache。PR 合并时移入已入库缓存；每日北京时间 00:00 的定时任务在 concurrency 锁下把当天缓存一次性追加到主分支 `hash.txt`。Fork 图片仍由贡献者公开 Fork 的 `image` 分支承载，主仓库不合并该图片分支。
 
-如果日志出现 `cache write denied` 或 `token has no writable scopes`，请在仓库 Settings → Actions → General → Workflow permissions 中允许 `GITHUB_TOKEN` 读写仓库内容和 Actions 资源；workflow 已声明 `contents: write`、`actions: write`，但仓库策略可能将权限限制为只读。更新权限后重新运行失败的 workflow。若日志显示图片下载 HTTP 404，检查错误中的附件 URL：评论中的图片必须仍存在且能以浏览器无登录访问；重新编辑评论并重新上传图片可生成新的附件链接。
+如果日志出现 `cache write denied` 或 `token has no writable scopes`，确认 `meme-hash.yml` 的 `jobs.process` 使用 `cache-mode: write`，然后重新运行失败的 workflow。处理 Issue 评论时，机器人通过 `Accept: application/vnd.github.full+json` 获取评论的 `body_html`，从中读取带 `?jwt=...` 签名的 `private-user-images.githubusercontent.com` 链接；不要给这个图片请求附加 Bearer Token。若日志仍显示 HTTP 404，重新编辑评论并上传图片以生成新的签名附件链接。
 
 ## 修改前端
 

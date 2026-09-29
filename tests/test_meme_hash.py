@@ -42,6 +42,15 @@ class MemeHashTests(unittest.TestCase):
             ],
         )
 
+    def test_parse_issue_body_html_keeps_signed_private_image_url(self):
+        signed = (
+            "https://private-user-images.githubusercontent.com/1/2.png"
+            "?jwt=eyJhbGciOiJIUzI1NiJ9&amp;expires=123"
+        )
+        self.assertEqual(parse_issue_image_urls(f'<p><img src="{signed}"></p>'), [
+            signed.replace("&amp;", "&"),
+        ])
+
     def test_find_duplicates_includes_known_and_repeated_hashes(self):
         digest_a = "a" * 64
         digest_b = "b" * 64

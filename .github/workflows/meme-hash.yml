@@ -27,6 +27,7 @@ jobs:
       (github.event_name == 'issue_comment' && github.event.sender.type != 'Bot')
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    cache-mode: write
     permissions:
       contents: write
       actions: write
@@ -85,6 +86,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    cache-mode: write
     permissions:
       contents: write
       actions: write
