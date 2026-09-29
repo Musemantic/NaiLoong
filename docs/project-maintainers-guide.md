@@ -102,6 +102,8 @@ node tests/ghimg.test.js
 
 图片成功认领后先写入 GitHub Actions Cache。Cache key 使用共同前缀和 UTC 时间戳后缀，workflow concurrency 保证任何读写都等待前一个任务完成；任务结束保存新 cache 并删除旧 cache。PR 合并时移入已入库缓存；每日北京时间 00:00 的定时任务在 concurrency 锁下把当天缓存一次性追加到主分支 `hash.txt`。Fork 图片仍由贡献者公开 Fork 的 `image` 分支承载，主仓库不合并该图片分支。
 
+如果日志出现 `cache write denied` 或 `token has no writable scopes`，请在仓库 Settings → Actions → General → Workflow permissions 中允许 `GITHUB_TOKEN` 读写仓库内容和 Actions 资源；workflow 已声明 `contents: write`、`actions: write`，但仓库策略可能将权限限制为只读。更新权限后重新运行失败的 workflow。若日志显示图片下载 HTTP 404，检查错误中的附件 URL：评论中的图片必须仍存在且能以浏览器无登录访问；重新编辑评论并重新上传图片可生成新的附件链接。
+
 ## 修改前端
 
 - 保持单页、零构建依赖的加载方式；新增 JS/CSS 文件后在 `index.html` 中正确引用。

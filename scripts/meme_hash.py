@@ -408,7 +408,12 @@ def fetch_image_bytes(url: str, attachment=False) -> bytes:
     elif host != "raw.githubusercontent.com":
         raise BotError("Fork images must be fetched from raw.githubusercontent.com")
 
-    request = Request(url, headers={"User-Agent": "NaiLoong-meme-hash-bot", "Accept": "image/*"})
+    headers = {"User-Agent": "NaiLoong-meme-hash-bot", "Accept": "image/*"}
+    # GitHub comment attachments can redirect to private-user-images. The token
+    # is only sent to the allowlisted GitHub attachment hosts above.
+    if attachment and os.environ.get("GITHUB_TOKEN"):
+        headers["Authorization"] = f"Bearer {os.environ['GITHUB_TOKEN']}"
+    request = Request(url, headers=headers)
     try:
         with urlopen(request, timeout=25) as response:
             final = urlsplit(response.geturl())
@@ -422,7 +427,7 @@ def fetch_image_bytes(url: str, attachment=False) -> bytes:
             data = response.read(MAX_IMAGE_BYTES + 1)
             content_type = response.headers.get("Content-Type", "")
     except (HTTPError, URLError, TimeoutError) as exc:
-        raise BotError(f"Could not download image: {exc}") from exc
+        raise BotError(f"Could not download image from {url}: {exc}") from exc
     validate_image_payload(data, content_type)
     return data
 
