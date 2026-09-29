@@ -12,6 +12,8 @@ from urllib.parse import parse_qsl, urlsplit
 
 MARKDOWN_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+COMMIT_SHA = re.compile(r"[0-9a-f]{40}\Z", re.IGNORECASE)
+COMPACT_IMAGE_URL = re.compile(r"([A-Za-z0-9-]+)/([0-9a-f]{40})/(.+)\Z", re.IGNORECASE)
 INVALID = object()
 
 
@@ -267,6 +269,21 @@ def _validate_url(value, owner, root, errors):
         errors.append(f'{owner}: "url" must be a plain URL, not Markdown image syntax')
         return None
 
+    compact = COMPACT_IMAGE_URL.fullmatch(value)
+    if compact:
+        owner_name, commit, compact_path = compact.groups()
+        file_parts = compact_path.split("/")
+        if (
+            owner_name.lower() == "lin-alg"
+            or any(part in {"", ".", ".."} for part in file_parts)
+            or any("\\" in part for part in file_parts)
+            or any(character in compact_path for character in "?#")
+            or any(character.isspace() for character in value)
+        ):
+            errors.append(f'{owner}: compact image URL has an invalid owner, commit, or path')
+            return None
+        return f"https://github.com/{owner_name}/NaiLoong/blob/{commit.lower()}/{PurePosixPath(compact_path).as_posix()}"
+
     if value.startswith("assets/placeholders/"):
         local_path = PurePosixPath(value)
         if ".." in local_path.parts or "\\" in value:
@@ -307,8 +324,8 @@ def _validate_url(value, owner, root, errors):
     if host == "github.com":
         if len(segments) < 6 or segments[3].lower() not in {"blob", "raw"}:
             errors.append(
-                f'{owner}: "url" must point to NaiLoong/blob/image/<path> '
-                "or an equivalent GitHub RAW URL"
+                f'{owner}: "url" must point to a commit-specific '
+                "NaiLoong/blob/<commit>/<path> or equivalent RAW URL"
             )
             return None
         owner_name, repo_name, link_type = segments[1:4]
@@ -334,13 +351,13 @@ def _validate_url(value, owner, root, errors):
         errors.append(f'{owner}: "url" must point to a NaiLoong fork')
         return None
 
-    if ref_parts[:1] == ["image"]:
-        file_parts = ref_parts[1:]
-    elif ref_parts[:3] == ["refs", "heads", "image"]:
-        file_parts = ref_parts[3:]
-    else:
-        errors.append(f'{owner}: image URL must reference the image branch')
+    if len(ref_parts) < 2 or not COMMIT_SHA.fullmatch(ref_parts[0]):
+        errors.append(
+            f'{owner}: image URL must include the 40-character commit SHA used for the image'
+        )
         return None
+    commit = ref_parts[0].lower()
+    file_parts = ref_parts[1:]
 
     parts = PurePosixPath("/".join(file_parts))
     if (
@@ -349,13 +366,13 @@ def _validate_url(value, owner, root, errors):
         or any(part in {"", ".", ".."} for part in file_parts)
         or any("\\" in part for part in file_parts)
     ):
-        errors.append(f'{owner}: image path must stay inside the fork image branch')
+        errors.append(f'{owner}: image path must stay inside the fork image commit')
         return None
     if owner_name.lower() == "lin-alg":
         errors.append(f'{owner}: image URL must point to a fork, not the source repository')
         return None
 
-    return f"https://github.com/{owner_name.lower()}/NaiLoong/blob/image/{parts.as_posix()}"
+    return f"https://github.com/{owner_name.lower()}/NaiLoong/blob/{commit}/{parts.as_posix()}"
 
 
 def _validate_tag_definitions(value, owner, errors):

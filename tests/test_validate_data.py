@@ -6,6 +6,9 @@ from pathlib import Path
 from scripts.validate_data import validate_data
 
 
+IMAGE_COMMIT = "a" * 40
+
+
 class ValidateDataTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -42,7 +45,7 @@ class ValidateDataTests(unittest.TestCase):
                 {
                     "title": "奶蛙大笑",
                     "tags": [1, 0],
-                    "url": "https://github.com/contributor/NaiLoong/blob/image/assets/memes/meme.png",
+                    "url": f"https://github.com/contributor/NaiLoong/blob/{IMAGE_COMMIT}/assets/memes/meme.png",
                 }
             ],
         )
@@ -96,11 +99,20 @@ class ValidateDataTests(unittest.TestCase):
 
     def test_accepts_fork_image_url_without_network_check(self):
         entries = json.loads((self.root / "data/naiwa/animated.json").read_text(encoding="utf-8"))
-        entries[0]["url"] = "https://github.com/contributor/NaiLoong/blob/image/assets/memes/not-found.png"
+        entries[0]["url"] = f"https://github.com/contributor/NaiLoong/blob/{IMAGE_COMMIT}/assets/memes/not-found.png"
         self.write_json("data/naiwa/animated.json", entries)
 
         errors = validate_data(self.root)
         self.assertEqual(errors, [])
+
+    def test_accepts_compact_commit_image_url(self):
+        entries = json.loads(
+            (self.root / "data/naiwa/animated.json").read_text(encoding="utf-8")
+        )
+        entries[0]["url"] = f"contributor/{IMAGE_COMMIT}/assets/memes/meme.png"
+        self.write_json("data/naiwa/animated.json", entries)
+
+        self.assertEqual(validate_data(self.root), [])
 
     def test_requires_bilingual_names_for_tag_dimensions(self):
         self.write_json(
@@ -113,10 +125,8 @@ class ValidateDataTests(unittest.TestCase):
 
     def test_accepts_github_raw_url_formats(self):
         urls = [
-            "https://github.com/contributor/NaiLoong/raw/image/assets/memes/meme.png",
-            "https://github.com/contributor/NaiLoong/raw/refs/heads/image/assets/memes/meme.png",
-            "https://raw.githubusercontent.com/contributor/NaiLoong/image/assets/memes/meme.png",
-            "https://raw.githubusercontent.com/contributor/NaiLoong/refs/heads/image/assets/memes/meme.png",
+            f"https://github.com/contributor/NaiLoong/raw/{IMAGE_COMMIT}/assets/memes/meme.png",
+            f"https://raw.githubusercontent.com/contributor/NaiLoong/{IMAGE_COMMIT}/assets/memes/meme.png",
         ]
         for url in urls:
             with self.subTest(url=url):
@@ -135,7 +145,7 @@ class ValidateDataTests(unittest.TestCase):
             {
                 "title": "同一图片的 RAW 地址",
                 "tags": [0, None],
-                "url": "https://raw.githubusercontent.com/contributor/NaiLoong/image/assets/memes/meme.png",
+                "url": f"https://raw.githubusercontent.com/contributor/NaiLoong/{IMAGE_COMMIT}/assets/memes/meme.png",
             }
         )
         self.write_json("data/naiwa/animated.json", entries)
@@ -164,7 +174,7 @@ class ValidateDataTests(unittest.TestCase):
         self.write_json("data/naiwa/animated.json", entries)
 
         errors = validate_data(self.root)
-        self.assertTrue(any("image branch" in error for error in errors))
+        self.assertTrue(any("commit SHA" in error for error in errors))
 
     def test_rejects_duplicate_image_urls(self):
         entries = json.loads((self.root / "data/naiwa/animated.json").read_text(encoding="utf-8"))

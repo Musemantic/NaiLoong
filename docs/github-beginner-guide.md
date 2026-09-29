@@ -97,12 +97,12 @@ git commit -m "add meme image"
 git push -u origin image
 ```
 
-Git Bash 下 Windows 的 `C:\Users\名字\Downloads\文件.png` 对应 `/c/Users/名字/Downloads/文件.png`。如果 `image` 分支已存在，运行 `git switch image`，再运行 `git pull --ff-only origin image` 同步已有图片，不要再次创建分支。Fork 请一直保持公开，也不要删除；站点通过该分支读取图片。
+Git Bash 下 Windows 的 `C:\Users\名字\Downloads\文件.png` 对应 `/c/Users/名字/Downloads/文件.png`。如果 `image` 分支已存在，运行 `git switch image`，再运行 `git pull --ff-only origin image` 同步已有图片，不要再次创建分支。Fork 请一直保持公开，也不要删除；站点通过固定的图片 commit 读取图片。
 
-上传后打开 Fork 中的图片文件，复制浏览器地址栏中的 GitHub 链接，形如：
+上传后在 Git Bash 运行 `git rev-parse HEAD` 记下这次图片上传 commit 的 40 位 SHA，再打开 Fork 中的图片文件，将地址中的 `image` 分支替换为这个 SHA。链接形如：
 
 ```text
-https://github.com/你的用户名/NaiLoong/blob/image/assets/memes/meme.png
+你的用户名/<图片commit SHA>/assets/memes/meme.png
 ```
 
 `image` 分支只作为图床，**不对原仓库发 PR，也不合并回原仓库**。本站只接受这类 Fork 的图片链接，不使用其他图床。
@@ -134,13 +134,13 @@ git switch -c meme/naiwa-laugh
 {
   "title": "奶蛙狂笑",
   "tags": [2, 0, 0],
-  "url": "https://github.com/你的用户名/NaiLoong/blob/image/assets/memes/meme.png"
+  "url": "你的用户名/<图片commit SHA>/assets/memes/meme.png"
 }
 ```
 
 - `title` 简洁描述表情；不要为改善旧图而重复增加同一个条目。
 - `tags` 按维度顺序填写本地序号，不要把所有标签展平成一串。例子中 `[2, 0, 0]` 表示 smile 维度选序号 2、age limit 选序号 0、artistic merit 选序号 0。暂时无法判断的维度写 `null`，如 `[2, null, 0]`；也可用对象写法 `{"smile": 2, "age limit": null, "artistic merit": 0}`。每个序号的文字含义查看该角色的 `tags.json`。标签不确定时可在 PR 中请维护者协助，维护者也可以直接修改 PR 分支中的标签。
-- `url` 换成你复制的 `github.com/.../blob/image/...` 图片地址。只写地址，不要写 `![描述](地址)`。
+- `url` 换成 `你的用户名/<40位commit SHA>/<文件路径>` 紧凑地址；也可使用完整的 GitHub blob/RAW 地址。打开图片所在 commit 或文件历史取得 SHA；只写地址，不要写 `![描述](地址)`。不要使用会随 `image` 分支后续提交改变内容的链接。
 - JSON 数组中，前一项后面要有逗号，最后一项后面不能有逗号。保存后运行 `python scripts/validate_data.py`；也可以看[项目指南的本地检查](project-maintainers-guide.md#本地运行与检查)。
 
 检查本次改动并提交：
@@ -163,8 +163,9 @@ git push -u origin meme/naiwa-laugh
 1. 打开本仓库或你刚推送分支的 GitHub 页面，点 **Compare & pull request**。
 2. 检查目标是原仓库 `lin-alg/NaiLoong` 的 `main`，来源是你 fork 的 `meme/...` 工作分支。不要选择 `image` 分支。
 3. 标题写明新增或修订了什么；正文可说明角色、分类、图片来源及预览链接。
-4. 看 **Data Linter** 检查是否通过。失败时打开检查详情，按报错文件和条目序号修正，然后在同一分支继续 `add → commit → push`；PR 会自动更新。
-5. 维护者审阅并合并后，表情数据会进入网站。图片仍由原来的 URL 提供。
+4. 如果你是在处理投稿区评论中的图片，将评论顶部机器人生成的 `MEME-CLAIM-...` 口令原样复制到 PR 描述中。一个 PR 应完整处理该评论中的全部图片。
+5. 看 **Data Linter** 和 **Meme Image Hash Check** 检查是否通过。失败时打开检查详情，按报错文件和条目序号修正，然后在同一分支继续 `add → commit → push`；PR 会自动更新。
+6. 维护者审阅并合并后，表情数据会进入网站。图片仍由处理者自己的公开 Fork 的 `image` 分支提供。
 
 > 截图占位：PR 的 base / compare 分支选择和 Data Linter 检查结果。
 

@@ -1,0 +1,130 @@
+name: Meme Image Hash Check
+
+on:
+  issue_comment:
+    types: [created, edited]
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited, ready_for_review, closed]
+  schedule:
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: meme-hash-queue-${{ github.repository }}
+  cancel-in-progress: false
+  queue: max
+
+permissions:
+  contents: write
+  actions: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  process:
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event_name == 'issue_comment' && github.event.sender.type != 'Bot')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout trusted default-branch code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Create cache key
+        id: cache-key
+        run: echo "key=meme-hash-state-$(date -u +%Y%m%d%H%M%S)-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore latest hash cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/meme-hash
+          key: ${{ steps.cache-key.outputs.key }}
+          restore-keys: |
+            meme-hash-state-
+
+      - name: Initialize hash cache
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/meme_hash.py init-cache
+
+      - name: Process event
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/meme_hash.py "${{ github.event_name }}"
+
+      - name: Save latest hash cache
+        id: cache-save
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/meme-hash
+          key: ${{ steps.cache-key.outputs.key }}
+
+      - name: Delete previous hash cache
+        if: always() && steps.cache-save.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MEME_HASH_CACHE_KEY: ${{ steps.cache-key.outputs.key }}
+        run: python scripts/meme_hash.py cleanup-cache
+
+  archive:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout trusted default-branch code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Create cache key
+        id: cache-key
+        run: echo "key=meme-hash-state-$(date -u +%Y%m%d%H%M%S)-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore latest hash cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/meme-hash
+          key: ${{ steps.cache-key.outputs.key }}
+          restore-keys: |
+            meme-hash-state-
+
+      - name: Initialize hash cache
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/meme_hash.py init-cache
+
+      - name: Archive ingested hashes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/meme_hash.py "${{ github.event_name }}"
+
+      - name: Save latest hash cache
+        id: cache-save
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/meme-hash
+          key: ${{ steps.cache-key.outputs.key }}
+
+      - name: Delete previous hash cache
+        if: always() && steps.cache-save.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MEME_HASH_CACHE_KEY: ${{ steps.cache-key.outputs.key }}
+        run: python scripts/meme_hash.py cleanup-cache

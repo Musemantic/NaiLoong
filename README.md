@@ -34,7 +34,8 @@ NaiLoong/
 ├── .github/
 │   ├── workflows/
 │   │   ├── pr-check.yml             # PR 数据校验与测试
-│   │   └── deploy.yml               # GitHub Pages 自动化发布
+│   │   ├── deploy.yml               # GitHub Pages 自动化发布
+│   │   └── meme-hash.yml            # 图片哈希去重、认领和归档
 │   ├── ISSUE_TEMPLATE/
 │   │   ├── config.yml               # 引导到投稿帖或项目反馈模板
 │   │   └── project_feedback.md     # 网站问题与项目建议模板
@@ -48,7 +49,9 @@ NaiLoong/
 │       └── tags.json                # 标签维度与取值表
 ├── docs/                            # 按人群拆分的贡献与开发指南
 ├── scripts/validate_data.py         # 可本地运行的数据结构校验器
-├── tests/                            # 数据校验、标签解析与图片 URL 测试
+├── scripts/meme_hash.py              # 图片哈希缓存和投稿状态自动化
+├── tests/                            # 数据校验、标签解析、图片 URL 和哈希测试
+├── hash.txt                          # 已归档图片的 SHA-256 哈希列表
 ├── assets/
 │   ├── css/style.css                # GitHub 设计系统风格样式
 │   ├── js/app.js                    # 核心驱动：动态渲染、路由与交互
@@ -96,15 +99,15 @@ python -m http.server 8080
 
 ```json
 [
-  { "title": "奶蛙狂笑", "tags": [2, 0, 0], "url": "https://github.com/你的用户名/NaiLoong/blob/image/assets/memes/laugh.png" }
+  { "title": "奶蛙狂笑", "tags": [2, 0, 0], "url": "你的用户名/<图片commit SHA>/assets/memes/laugh.png" }
 ]
 ```
 
 | 字段 | 类型 | 说明 |
-| :--- | :--- | : |
+| :--- | :--- | :--- |
 | `title` | string | 表情名称，必填 |
-| `tags` | number[] 或 object | 数组按 `tags.json` 维度顺序逐维填写本地序号，可用 `null` 表示未知；也支持 `{ "smile": 2 }` 形式的维度对象 |
-| `url` | string | 使用自己公开 Fork 的 `NaiLoong/blob/image/文件路径` 链接；GitHub RAW 格式也可识别，不使用其他图床 |
+| `tags` | number[] 或 object | 数组按 `tags.json` 标签顺序逐维填写，可用 `null` 表示未知；也支持 `{ "smile": 2 }` 形式的对象 |
+| `url` | string | 使用自己公开 Fork 的紧凑格式 `用户名/<图片commit SHA>/文件路径`，也可写完整 blob/RAW URL；必须固定到上传图片时的 commit，不使用会变化的 `image` 分支链接 |
 
 ### 3. 标签表 `tags.json`
 

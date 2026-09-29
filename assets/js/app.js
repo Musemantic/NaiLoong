@@ -284,7 +284,7 @@
 
   function cardMarkup(item, charMeta, index) {
     const alt = item.title + " · " + charMeta.name;
-    const src = esc(item.url);
+    const src = esc(window.GhImg ? (window.GhImg.toRaw(item.url) || item.url) : item.url);
     const link = esc(window.GhImg ? window.GhImg.link(item.url) : item.url);
     const tags = window.MemeSearch.labelsOf(
       window.MemeSearch.resolveRawTags(item.tags, currentChar().tagIndex),

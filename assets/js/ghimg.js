@@ -22,7 +22,11 @@
   function toRaw(url) {
     if (typeof url !== "string") return null;
     const clean = url.trim().split(/[?#]/)[0];
-    let match = /^https?:\/\/github\.com\/([^/?#]+)\/([^/?#]+)\/(?:blob|raw)\/([^/?#]+)\/(.+)$/.exec(clean);
+    let match = /^([A-Za-z0-9-]+)\/([0-9a-f]{40})\/(.+)$/i.exec(clean);
+    if (match) {
+      return "https://raw.githubusercontent.com/" + match[1] + "/NaiLoong/" + match[2] + "/" + match[3];
+    }
+    match = /^https?:\/\/github\.com\/([^/?#]+)\/([^/?#]+)\/(?:blob|raw)\/([^/?#]+)\/(.+)$/.exec(clean);
     if (match) {
       return "https://raw.githubusercontent.com/" + match[1] + "/" + match[2] + "/" + match[3] + "/" + match[4];
     }

@@ -22,8 +22,9 @@
 | `.github/pull_request_template.md` | PR 作者提交前的检查清单。 |
 | `.github/workflows/pr-check.yml` | Pull Request 上执行数据校验器和 Python 单元测试。 |
 | `.github/workflows/deploy.yml` | 检查数据并将仓库根目录发布到 GitHub Pages。 |
+| `.github/workflows/meme-hash.yml` | Issue 图片和 PR 图片的哈希去重、认领状态、合并回收和每日归档。 |
 | `scripts/validate_data.py` | 数据、manifest、分类引用、标签和图片地址的仓库级校验。 |
-| `tests/` | 数据校验和标签解析的自动化测试；Python 测试使用标准库，搜索测试使用 Node 内置断言。 |
+| `tests/` | 数据校验、标签解析、图片 URL 和哈希自动化测试；Python 使用标准库，Node 使用内置断言。 |
 | `docs/` | 面向不同贡献者的投稿、Git 和项目开发说明。 |
 | `CONTRIBUTING.md` | 三类参与者的文档入口索引。 |
 | `AGENTS.md` | 协作者应遵循的实现约定、校验命令和待确认事项。 |
@@ -55,7 +56,7 @@
 - 同一角色 `tags.json` 的维度顺序对应标签数组位置，维度内部的数字键是本地序号。调整维度顺序会改变数组位置；修改本地序号时也要同步检查该维度的记录。
 - 维度名称的中英文显示文本统一维护在 `data/tag-translations.json`，前端按维度键查找中文名称；不要在渲染代码中写死译名。
 - 当前页面兼容数字数组和 `{ "维度": 本地序号或标签文字 }` 对象。校验器以这两种格式为正式投稿格式；不要依赖运行时虽然能读取但文档未支持的隐式类型。
-- 新投稿的 `url` 必须指向贡献者公开 Fork 中 `image` 分支的文件；推荐 `NaiLoong/blob/image/<path>` 格式。校验器也接受等价 RAW 格式，检查 URL 结构但不联网确认文件是否存在。
+- 新投稿的 `url` 必须固定到贡献者公开 Fork 中上传图片的 commit：推荐 `fork-owner/<40位commit SHA>/<path>` 紧凑格式，也接受完整 blob/RAW 格式。校验器检查 URL 结构但不联网确认文件是否存在；不能使用会随 `image` 分支后续提交变化的 URL。
 
 ## 从投稿 Issue 收录图片
 
@@ -84,14 +85,22 @@ node tests/ghimg.test.js
 
 ## 自动检查
 
-`.github/workflows/pr-check.yml` 在 Pull Request 上运行三步：
+`.github/workflows/pr-check.yml` 在 Pull Request 上运行四步：
 
 1. `python -m unittest discover -s tests -v`，验证校验器能接受有效数据并拒绝已知错误。
 2. `node tests/search.test.js`，验证本地序号、`null`、对象写法、搜索和双语标签展示。
 3. `node tests/ghimg.test.js`，验证 blob / RAW 图片地址转换。
 4. `python scripts/validate_data.py`，检查仓库当前全部数据、manifest 引用、Fork 图片 URL 和重复 URL。
 
-图片 URL 只进行结构检查，不向网络请求 Fork 文件；`assets/placeholders/` 是现有演示数据的例外。部署工作流也会先执行数据校验，校验成功后才上传 Pages artifact。检查失败时从 Actions 的报错文件和条目序号定位；如果校验器规则与本指南不一致，应一起修改实现、测试和文档。
+数据校验器对图片 URL 只进行结构检查，不向网络请求 Fork 文件；`assets/placeholders/` 是现有演示数据的例外。独立的 `meme-hash.yml` 会在受信任的主仓库 workflow 中下载新增 PR 图片和 Issue 附件，执行哈希去重与 5 MB 检查。部署工作流也会先执行数据校验，校验成功后才上传 Pages artifact。检查失败时从 Actions 的报错文件和条目序号定位；如果校验器规则与本指南不一致，应一起修改实现、测试和文档。
+
+## 图片哈希与投稿状态
+
+第一类投稿者直接在[共享投稿 Issue](https://github.com/lin-alg/NaiLoong/issues/1)评论中上传图片。`meme-hash.yml` 会计算评论附件的 SHA-256，并在 GitHub Actions Cache 维护已入库和预占位缓存。机器人会在原评论顶部维护「⚪ 未处理」「🟡 处理中」或「🟢 已入库」状态栏，并保留评论者自己的正文。
+
+第二、三类贡献者的 PR 描述应包含状态评论提供的 `MEME-CLAIM-...` 认领口令。PR 图片哈希必须与该评论全部图片一致；没有口令的普通数据 PR 也会检查其 Fork `image` 分支图片是否与三层缓存重复。重复时 PR 检查失败，不新增预占位哈希。
+
+图片成功认领后先写入 GitHub Actions Cache。Cache key 使用共同前缀和 UTC 时间戳后缀，workflow concurrency 保证任何读写都等待前一个任务完成；任务结束保存新 cache 并删除旧 cache。PR 合并时移入已入库缓存；每日北京时间 00:00 的定时任务在 concurrency 锁下把当天缓存一次性追加到主分支 `hash.txt`。Fork 图片仍由贡献者公开 Fork 的 `image` 分支承载，主仓库不合并该图片分支。
 
 ## 修改前端
 
