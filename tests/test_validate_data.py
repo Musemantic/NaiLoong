@@ -30,6 +30,13 @@ class ValidateDataTests(unittest.TestCase):
             {"smile": {"0": "憋笑", "1": "大笑"}, "safety": {"0": "安全"}},
         )
         self.write_json(
+            "data/tag-translations.json",
+            {
+                "smile": {"en": "Smile strength", "zh": "笑容强度"},
+                "safety": {"en": "Safety", "zh": "安全"},
+            },
+        )
+        self.write_json(
             "data/naiwa/animated.json",
             [
                 {
@@ -63,7 +70,7 @@ class ValidateDataTests(unittest.TestCase):
 
         self.assertEqual(validate_data(self.root), [])
 
-    def test_rejects_flattened_tag_values(self):
+    def test_rejects_undefined_dimension_local_tag(self):
         entries = json.loads((self.root / "data/naiwa/animated.json").read_text(encoding="utf-8"))
         entries[0]["tags"] = [1, 2]
         self.write_json("data/naiwa/animated.json", entries)
@@ -95,6 +102,47 @@ class ValidateDataTests(unittest.TestCase):
         errors = validate_data(self.root)
         self.assertEqual(errors, [])
 
+    def test_requires_bilingual_names_for_tag_dimensions(self):
+        self.write_json(
+            "data/tag-translations.json",
+            {"smile": {"en": "Smile strength", "zh": "笑容强度"}},
+        )
+
+        errors = validate_data(self.root)
+        self.assertTrue(any("missing bilingual name for dimension 'safety'" in error for error in errors))
+
+    def test_accepts_github_raw_url_formats(self):
+        urls = [
+            "https://github.com/contributor/NaiLoong/raw/image/assets/memes/meme.png",
+            "https://github.com/contributor/NaiLoong/raw/refs/heads/image/assets/memes/meme.png",
+            "https://raw.githubusercontent.com/contributor/NaiLoong/image/assets/memes/meme.png",
+            "https://raw.githubusercontent.com/contributor/NaiLoong/refs/heads/image/assets/memes/meme.png",
+        ]
+        for url in urls:
+            with self.subTest(url=url):
+                entries = json.loads(
+                    (self.root / "data/naiwa/animated.json").read_text(encoding="utf-8")
+                )
+                entries[0]["url"] = url
+                self.write_json("data/naiwa/animated.json", entries)
+                self.assertEqual(validate_data(self.root), [])
+
+    def test_duplicate_blob_and_raw_urls_are_detected(self):
+        entries = json.loads(
+            (self.root / "data/naiwa/animated.json").read_text(encoding="utf-8")
+        )
+        entries.append(
+            {
+                "title": "同一图片的 RAW 地址",
+                "tags": [0, None],
+                "url": "https://raw.githubusercontent.com/contributor/NaiLoong/image/assets/memes/meme.png",
+            }
+        )
+        self.write_json("data/naiwa/animated.json", entries)
+
+        errors = validate_data(self.root)
+        self.assertTrue(any("duplicate image URL" in error for error in errors))
+
     def test_rejects_tag_array_with_wrong_dimension_count(self):
         entries = json.loads((self.root / "data/naiwa/animated.json").read_text(encoding="utf-8"))
         entries[0]["tags"] = [1]
@@ -116,7 +164,7 @@ class ValidateDataTests(unittest.TestCase):
         self.write_json("data/naiwa/animated.json", entries)
 
         errors = validate_data(self.root)
-        self.assertTrue(any("blob/image" in error for error in errors))
+        self.assertTrue(any("image branch" in error for error in errors))
 
     def test_rejects_duplicate_image_urls(self):
         entries = json.loads((self.root / "data/naiwa/animated.json").read_text(encoding="utf-8"))

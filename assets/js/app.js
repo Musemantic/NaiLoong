@@ -4,6 +4,7 @@
   const CONFIG = {
     repo: "https://github.com/lin-alg/NaiLoong",
     dataBase: "data/",
+    tagDimensions: "data/tag-translations.json",
     fallback: "assets/placeholders/fallback.gif"
   };
 
@@ -14,6 +15,7 @@
   const el = {};
   const state = {
     manifest: [],
+    tagDimensions: {},
     chars: new Map(),
     charId: null,
     subId: null,
@@ -105,7 +107,7 @@
       tagsJson = {};
     }
 
-    const tagIndex = window.MemeSearch.buildTagIndex(tagsJson);
+    const tagIndex = window.MemeSearch.buildTagIndex(tagsJson, state.tagDimensions);
     const subs = new Map();
     subEntries.forEach(([subId, sub]) => {
       sub.rows = window.MemeSearch.buildList(sub.items, tagIndex);
@@ -261,7 +263,7 @@
           .join("");
         return (
           '<div class="tag-group"><span class="tag-group-label">' +
-          esc(cat.key) +
+          esc(cat.label) +
           '</span><div class="chip-row">' +
           chips +
           "</div></div>"
@@ -779,10 +781,14 @@
     el.grid.innerHTML = skeletonMarkup(8);
 
     try {
-      const manifest = await fetchJSON(CONFIG.dataBase + "manifest.json");
+      const [manifest, tagDimensions] = await Promise.all([
+        fetchJSON(CONFIG.dataBase + "manifest.json"),
+        fetchJSON(CONFIG.tagDimensions)
+      ]);
       if (!Array.isArray(manifest) || !manifest.length) throw new Error("manifest 为空");
 
       state.manifest = manifest;
+      state.tagDimensions = tagDimensions;
       const loaded = await Promise.all(manifest.map((meta) => loadChar(meta)));
       loaded.forEach((data) => state.chars.set(data.meta.id, data));
 

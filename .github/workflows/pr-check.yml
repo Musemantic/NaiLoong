@@ -30,5 +30,8 @@ jobs:
       - name: Test search semantics
         run: node tests/search.test.js
 
+      - name: Test GitHub image URL conversion
+        run: node tests/ghimg.test.js
+
       - name: Validate repository data
         run: python scripts/validate_data.py

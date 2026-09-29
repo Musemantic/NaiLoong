@@ -7,14 +7,11 @@ import json
 import re
 import sys
 from pathlib import Path, PurePosixPath
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 
 MARKDOWN_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
-IMAGE_URL = re.compile(
-    r"https://github\.com/([^/]+)/NaiLoong/blob/image/(.+)\Z", re.IGNORECASE
-)
 INVALID = object()
 
 
@@ -71,6 +68,24 @@ def validate_data(root: Path | str) -> list[str]:
     if not isinstance(manifest, list) or not manifest:
         errors.append("data/manifest.json: expected a non-empty JSON array")
         return errors
+
+    dimension_names_path = (data_dir / "tag-translations.json").resolve()
+    dimension_names = loaded.get(dimension_names_path, INVALID)
+    if dimension_names is INVALID:
+        errors.append("data/tag-translations.json: file not found or invalid JSON")
+        dimension_names = {}
+    elif not isinstance(dimension_names, dict):
+        errors.append("data/tag-translations.json: expected an object of bilingual dimension names")
+        dimension_names = {}
+    else:
+        for dimension, names in dimension_names.items():
+            if not isinstance(names, dict) or any(
+                not isinstance(names.get(language), str) or not names[language].strip()
+                for language in ("en", "zh")
+            ):
+                errors.append(
+                    f"data/tag-translations.json: {dimension!r} needs non-empty en and zh names"
+                )
 
     role_ids = set()
     referenced_entries = set()
@@ -205,6 +220,12 @@ def validate_data(root: Path | str) -> list[str]:
                     local_ids, labels = _validate_tag_definitions(
                         tag_definitions, _display_path(tags_path, root), errors
                     )
+                    for dimension in local_ids:
+                        if dimension not in dimension_names:
+                            errors.append(
+                                f"data/tag-translations.json: missing bilingual name for "
+                                f"dimension {dimension!r}"
+                            )
                     for category in categories:
                         if not isinstance(category, dict):
                             continue
@@ -228,7 +249,7 @@ def validate_data(root: Path | str) -> list[str]:
 
     for path in json_files:
         resolved = path.resolve()
-        if path.name in {"manifest.json", "tags.json"}:
+        if path.name in {"manifest.json", "tags.json", "tag-translations.json"}:
             continue
         if resolved not in referenced_entries:
             errors.append(f"{_display_path(path, root)}: entry file is not referenced by manifest")
@@ -262,34 +283,71 @@ def _validate_url(value, owner, root, errors):
             return None
         return value
 
-    match = IMAGE_URL.fullmatch(value)
-    if not match:
-        errors.append(
-            f'{owner}: "url" must point to a GitHub fork file under '
-            "NaiLoong/blob/image/<path>"
-        )
-        return None
-
-    owner_name, file_path = match.groups()
     if any(character.isspace() for character in value):
         errors.append(f'{owner}: "url" must not contain whitespace')
         return None
     try:
         parsed = urlsplit(value)
-        parsed.port
+        port = parsed.port
     except ValueError:
         errors.append(f'{owner}: "url" is not a valid GitHub image URL')
         return None
-    if parsed.hostname != "github.com" or parsed.query or parsed.fragment:
-        errors.append(f'{owner}: "url" must be a direct GitHub blob URL without query or fragment')
-        return None
-    parts = PurePosixPath(file_path)
-    raw_parts = file_path.split("/")
     if (
-        not file_path
+        parsed.scheme != "https"
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+        or port not in (None, 443)
+    ):
+        errors.append(f'{owner}: "url" must be an HTTPS GitHub image URL without a fragment')
+        return None
+
+    segments = parsed.path.split("/")
+    host = (parsed.hostname or "").lower()
+    if host == "github.com":
+        if len(segments) < 6 or segments[3].lower() not in {"blob", "raw"}:
+            errors.append(
+                f'{owner}: "url" must point to NaiLoong/blob/image/<path> '
+                "or an equivalent GitHub RAW URL"
+            )
+            return None
+        owner_name, repo_name, link_type = segments[1:4]
+        ref_parts = segments[4:]
+        query = parse_qsl(parsed.query, keep_blank_values=True)
+        if query and not (link_type.lower() == "blob" and query == [("raw", "1")]):
+            errors.append(f'{owner}: "url" has an unsupported query string')
+            return None
+    elif host == "raw.githubusercontent.com":
+        if len(segments) < 5 or parsed.query:
+            errors.append(f'{owner}: "url" must be a direct GitHub RAW image URL')
+            return None
+        owner_name, repo_name = segments[1:3]
+        link_type = "raw"
+        ref_parts = segments[3:]
+    else:
+        errors.append(
+            f'{owner}: "url" must use github.com or raw.githubusercontent.com'
+        )
+        return None
+
+    if not owner_name or not repo_name or repo_name.lower() != "nailoong":
+        errors.append(f'{owner}: "url" must point to a NaiLoong fork')
+        return None
+
+    if ref_parts[:1] == ["image"]:
+        file_parts = ref_parts[1:]
+    elif ref_parts[:3] == ["refs", "heads", "image"]:
+        file_parts = ref_parts[3:]
+    else:
+        errors.append(f'{owner}: image URL must reference the image branch')
+        return None
+
+    parts = PurePosixPath("/".join(file_parts))
+    if (
+        not file_parts
         or parts.is_absolute()
-        or any(part in {"", ".", ".."} for part in raw_parts)
-        or "\\" in file_path
+        or any(part in {"", ".", ".."} for part in file_parts)
+        or any("\\" in part for part in file_parts)
     ):
         errors.append(f'{owner}: image path must stay inside the fork image branch')
         return None
@@ -297,7 +355,7 @@ def _validate_url(value, owner, root, errors):
         errors.append(f'{owner}: image URL must point to a fork, not the source repository')
         return None
 
-    return f"https://github.com/{owner_name.lower()}/nailoong/blob/image/{parts.as_posix()}"
+    return f"https://github.com/{owner_name.lower()}/NaiLoong/blob/image/{parts.as_posix()}"
 
 
 def _validate_tag_definitions(value, owner, errors):

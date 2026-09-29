@@ -1,15 +1,22 @@
 (function (global) {
   "use strict";
 
-  function buildTagIndex(tagsJson) {
+  function buildTagIndex(tagsJson, dimensionNames) {
     const cats = [];
     const flat = [];
     const byFlat = new Map();
     const source = tagsJson && typeof tagsJson === "object" ? tagsJson : {};
+    const names = dimensionNames && typeof dimensionNames === "object" ? dimensionNames : {};
 
     Object.keys(source).forEach((catKey) => {
       const values = source[catKey] || {};
-      const cat = { key: catKey, start: flat.length, items: [] };
+      const localizedName = names[catKey] && names[catKey].zh;
+      const cat = {
+        key: catKey,
+        label: typeof localizedName === "string" && localizedName ? localizedName : catKey,
+        start: flat.length,
+        items: []
+      };
       Object.keys(values)
         .sort((a, b) => Number(a) - Number(b))
         .forEach((localKey) => {
