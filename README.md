@@ -4,16 +4,16 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapull.com)
 [![Data Linter](https://img.shields.io/badge/CI-Data%20Linter-blue?logo=github)](../../actions)
 [![Static Site](https://img.shields.io/badge/Static-SPA%20%2B%20zero%20build-8dd6ff?logo=github)](./index.html)
-[![Repo Size](https://img.shields.io/github/repo-size/lin-alg/NaiLoong?color=blue)](https://github.com)
+[![Repo Size](https://img.shields.io/github/repo-size/lin-alg/NaiLoong?color=blue)](https://github.com/lin-alg/NaiLoong)
 
-奶龙表情合集，也是一个可以从零练习 GitHub 协作的开源项目。社区图片统一由贡献者公开 Fork 的 `image` 分支托管，主仓库通过 JSON 汇总展示。
+奶-hub 是一个集中展示奶科生物表情包的网站，也能帮助入门 GitHub 的使用。表情图片统一托管于贡献者 Fork 仓库的 `image` 分支，主仓库仅做集中展示。
 
-## 🧭 按你的目标开始
+## 🧭 按你的兴趣开始
 
-- **只想分享表情，不想碰 Git：**去[社区投稿评论区](docs/meme-submissions.md)，按格式在置顶 Issue 下留言并上传图片。
-- **想练习 GitHub 并亲自提交：**看[新手 GitHub 投稿教程](docs/github-beginner-guide.md)，从 Fork、Git Bash 到发 PR 一步步完成。
-- **想改进网站或项目本身：**看[项目结构与开发指南](docs/project-maintainers-guide.md)，了解数据、前端和自动检查。
-- **贡献规则与入口索引：**[贡献指南](CONTRIBUTING.md)。
+- **只想分享表情，不想碰 Git：** 去[置顶投稿区](https://github.com/lin-alg/NaiLoong/issues/1)，直接在评论里上传图片。
+- **想练习 GitHub 流程并亲自提交：** 看[新手 GitHub 投稿教程](docs/github-beginner-guide.md)，从 Git Bash 的使用到发 PR 一步步完成。
+- **想改进网站或项目本身：** 看[项目结构与开发指南](docs/project-maintainers-guide.md)，了解数据约定、项目结构和自动检查机制。
+- **贡献规则入口：**[贡献指南](CONTRIBUTING.md)。
 
 ---
 
@@ -41,13 +41,14 @@ NaiLoong/
 │   └── pull_request_template.md     # 新手 PR 提交自检清单
 ├── data/                            # 数据
 │   ├── manifest.json                # 全站角色总纲目录
+│   ├── tag-translations.json        # 标签名翻译
 │   └── <role-id>/                   # 每个角色一个目录
 │       ├── animated.json            # 动图分类文件
 │       ├── static.json              # 静态图分类文件
 │       └── tags.json                # 标签维度与取值表
 ├── docs/                            # 按人群拆分的贡献与开发指南
 ├── scripts/validate_data.py         # 可本地运行的数据结构校验器
-├── tests/                            # 数据校验与标签解析测试
+├── tests/                            # 数据校验、标签解析与图片 URL 测试
 ├── assets/
 │   ├── css/style.css                # GitHub 设计系统风格样式
 │   ├── js/app.js                    # 核心驱动：动态渲染、路由与交互
@@ -103,7 +104,7 @@ python -m http.server 8080
 | :--- | :--- | : |
 | `title` | string | 表情名称，必填 |
 | `tags` | number[] 或 object | 数组按 `tags.json` 维度顺序逐维填写本地序号，可用 `null` 表示未知；也支持 `{ "smile": 2 }` 形式的维度对象 |
-| `url` | string | 新投稿使用自己公开 Fork 的 `NaiLoong/blob/image/文件路径` 链接，不使用其他图床 |
+| `url` | string | 使用自己公开 Fork 的 `NaiLoong/blob/image/文件路径` 链接；GitHub RAW 格式也可识别，不使用其他图床 |
 
 ### 3. 标签表 `tags.json`
 
@@ -114,6 +115,8 @@ python -m http.server 8080
   "artistic merit": { "0": "下里巴人", "1": "日常", "2": "阳春白雪" }
 }
 ```
+
+`data/tag-translations.json` 为维度键提供中英文显示名；筛选逻辑继续使用 `tags.json` 的维度键，界面显示对应的中文名称。
 
 数组中每个位置对应一个维度，维度顺序与 `tags.json` 一致；填该维度标签的本地序号，不要跨维度展平：
 
@@ -129,11 +132,11 @@ python -m http.server 8080
 
 ## 🤝 贡献与维护
 
-- **只分享表情：**在[共享投稿 Issue 评论区](docs/meme-submissions.md)上传图片，不需要 Git 或 JSON。
+- **只分享表情：**在[共享投稿 Issue 评论区](https://github.com/lin-alg/NaiLoong/issues/1)直接上传图片，不需要 Fork、Git 或 JSON。
 - **自己提交表情：**跟随[GitHub 新手投稿教程](docs/github-beginner-guide.md)，包含 Fork、Git Bash、分支、PR、更新他人条目和冲突解决。
 - **修改网站或数据系统：**查看[项目结构与开发指南](docs/project-maintainers-guide.md)。
-- 本地检查：`python scripts/validate_data.py` 和 `python -m unittest discover -s tests -v`。
-- 视觉参考：[github-design-system-analysis.md](./github-design-system-analysis.md)。
+- 本地检查：`python scripts/validate_data.py`、`python -m unittest discover -s tests -v`、`node tests/search.test.js` 和 `node tests/ghimg.test.js`。
+- 前端风格参考：[github-design-system-analysis.md](./github-design-system-analysis.md)。
 
 ## 🗳️ 贡献者公约
 

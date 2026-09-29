@@ -1,6 +1,6 @@
 # GitHub 新手投稿教程
 
-本教程只覆盖在奶-hub 提交或修订一条表情记录所需的 GitHub 操作。不会要求你预先学习一整套 Git；按顺序执行即可。
+本教程带你把[投稿区评论里的图片](https://github.com/lin-alg/NaiLoong/issues/1)转存到自己的 Fork，并提交对应的数据 PR。评论投稿者不需要 Fork；需要完成转存和数据记录的人按本教程操作即可。
 
 ## 先理解这几个词
 
@@ -80,7 +80,9 @@ git push origin main
 
 此时先不要创建 JSON 工作分支；上传图片需要临时切换到 `image`，下一节会说明。若 `git merge --ff-only` 提示无法快进，先看[同步与冲突处理](#同步远程更改与解决冲突)，不要强行推送。
 
-## 4. 图片放在哪里
+## 4. 从投稿评论下载图片并转存
+
+第一类投稿者直接把图片上传在[共享投稿 Issue](https://github.com/lin-alg/NaiLoong/issues/1)的评论中。选中要整理的图片，打开原图并保存到电脑；评论附件链接只用于收集，不作为主站最终图片链接。
 
 图片和 JSON 记录分开提交，主仓库只需要收到 JSON 变更。图片单张不得超过 5 MB，建议压缩到 2 MB 以下。统一把图片上传到你公开 Fork 的 `image` 分支：
 
@@ -97,7 +99,7 @@ git push -u origin image
 
 Git Bash 下 Windows 的 `C:\Users\名字\Downloads\文件.png` 对应 `/c/Users/名字/Downloads/文件.png`。如果 `image` 分支已存在，运行 `git switch image`，再运行 `git pull --ff-only origin image` 同步已有图片，不要再次创建分支。Fork 请一直保持公开，也不要删除；站点通过该分支读取图片。
 
-上传后打开你 fork 的 `image` 分支，点开图片文件，复制浏览器地址栏中的 GitHub 链接，形如：
+上传后打开 Fork 中的图片文件，复制浏览器地址栏中的 GitHub 链接，形如：
 
 ```text
 https://github.com/你的用户名/NaiLoong/blob/image/assets/memes/meme.png
@@ -137,7 +139,7 @@ git switch -c meme/naiwa-laugh
 ```
 
 - `title` 简洁描述表情；不要为改善旧图而重复增加同一个条目。
-- `tags` 按维度顺序填写本地序号，不要把所有标签展平成一串。例子中 `[2, 0, 0]` 表示 smile 维度选序号 2、age limit 选序号 0、artistic merit 选序号 0。暂时无法判断的维度写 `null`，如 `[2, null, 0]`；也可用对象写法 `{"smile": 2, "age limit": null, "artistic merit": 0}`。每个序号的文字含义查看该角色的 `tags.json`。
+- `tags` 按维度顺序填写本地序号，不要把所有标签展平成一串。例子中 `[2, 0, 0]` 表示 smile 维度选序号 2、age limit 选序号 0、artistic merit 选序号 0。暂时无法判断的维度写 `null`，如 `[2, null, 0]`；也可用对象写法 `{"smile": 2, "age limit": null, "artistic merit": 0}`。每个序号的文字含义查看该角色的 `tags.json`。标签不确定时可在 PR 中请维护者协助，维护者也可以直接修改 PR 分支中的标签。
 - `url` 换成你复制的 `github.com/.../blob/image/...` 图片地址。只写地址，不要写 `![描述](地址)`。
 - JSON 数组中，前一项后面要有逗号，最后一项后面不能有逗号。保存后运行 `python scripts/validate_data.py`；也可以看[项目指南的本地检查](project-maintainers-guide.md#本地运行与检查)。
 
@@ -172,7 +174,7 @@ git push -u origin meme/naiwa-laugh
 
 - 只改标题或标签：保留现有 `url`，只改对应 JSON 项。
 - 替换图片：把新图放在自己的公开 `image` 分支，更新原条目的 `url`。不要改动原作者 fork，也不要把图片分支合并进主仓库。
-- 保留可确认的作者和来源信息；PR 说明为什么要改，并提供新旧图片对比。授权不明确时，先在投稿 Issue 询问维护者。
+- 保留记录中已有的来源信息；PR 说明为什么要改，并提供新旧图片对比。
 - 从最新的原仓库 `main` 建立你自己的工作分支，通过 PR 提出修改。维护者会检查是否应采纳以及如何保留署名。
 
 ## 同步远程更改与解决冲突
