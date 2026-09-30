@@ -187,11 +187,10 @@ def github_image_url(url: str) -> str | None:
         and len(parts[1]) == 40
         and all(c in "0123456789abcdefABCDEF" for c in parts[1])
     ):
-        owner = parts[0]
         commit = parts[1]
-        repo = default_repo
         file_path = "/".join(parts[2:])
-        return f"https://raw.githubusercontent.com/{owner}/{repo}/{commit}/{file_path}"
+        # 统一使用主仓库 REPOSITORY，因为 commit 已经在主仓库，且 token 只有主仓库访问权
+        return f"https://raw.githubusercontent.com/{REPOSITORY}/{commit}/{file_path}"
 
     # 适配完整 GitHub 链接: owner/repo/raw(或blob)/commit/path
     if len(parts) >= 5 and parts[2] in {"raw", "blob"}:
@@ -369,6 +368,20 @@ class GitHub:
             return []
         return [entry for entry in parsed if isinstance(entry, dict)]
 
+    def read_blob_json(self, blob_sha):
+        if not blob_sha:
+            return []
+        item = self.request("GET", f"/repos/{self.repository}/git/blobs/{blob_sha}")
+        if item.get("encoding") != "base64":
+            raise BotError(f"Could not read PR file blob as base64: {blob_sha}")
+        try:
+            parsed = json.loads(base64.b64decode(item.get("content", "")))
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise BotError(f"PR file blob is invalid JSON: {blob_sha}") from exc
+        if not isinstance(parsed, list):
+            return []
+        return [entry for entry in parsed if isinstance(entry, dict)]
+
     def issue_comment(self, issue_number, body):
         return self.request(
             "POST",
@@ -438,12 +451,17 @@ def fetch_image_bytes(url: str, attachment=False) -> bytes:
         raise BotError("Fork images must be fetched from raw.githubusercontent.com")
 
     headers = {"User-Agent": "NaiLoong-meme-hash-bot", "Accept": "image/*"}
+    if not attachment:
+        token = os.environ.get("GITHUB_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+            
     request = Request(url, headers=headers)
     try:
         with urlopen(request, timeout=25) as response:
             final = urlsplit(response.geturl())
             final_host = (final.hostname or "").lower()
-            allowed = ATTACHMENT_HOSTS if attachment else {"raw.githubusercontent.com"}
+            allowed = ATTACHMENT_HOSTS if attachment else {"raw.githubusercontent.com", "objects.githubusercontent.com"}
             if final.scheme != "https" or final_host not in allowed:
                 raise BotError("GitHub image request redirected to an unsupported host")
             content_length = response.headers.get("Content-Length")
@@ -509,7 +527,7 @@ def new_data_urls(github: GitHub, pull_request):
             continue
         base_filename = item.get("previous_filename", filename)
         base_entries = github.pr_file_json(REPOSITORY, base_filename, base["sha"])
-        head_entries = github.pr_file_json(head_repo, filename, head["sha"])
+        head_entries = [] if item.get("status") == "removed" else github.read_blob_json(item.get("sha"))
         old_urls = canonical_urls_from_entries(base_entries)
         new_urls_in_head = canonical_urls_from_entries(head_entries)
         additions.extend(added_canonical_urls(old_urls, new_urls_in_head))
