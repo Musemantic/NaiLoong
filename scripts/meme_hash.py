@@ -12,6 +12,7 @@ import json
 import os
 import re
 import secrets
+import subprocess
 import sys
 import time
 from collections import Counter
@@ -486,10 +487,15 @@ def hash_attachment_urls(urls):
 def hash_fork_urls(urls):
     hashes = []
     for url in urls:
-        raw_url = github_image_url(url)
-        if raw_url is None:
-            continue
-        data = fetch_image_bytes(raw_url)
+        idx = url.find("assets/")
+        file_path = url[idx:] if idx != -1 else url.split("/")[-1]
+        
+        try:
+            data = subprocess.check_output(["git", "show", f"FETCH_HEAD:{file_path}"])
+        except subprocess.CalledProcessError as exc:
+            raise BotError(f"无法从 PR 的 Git 提交中读取图片 {file_path}: {exc}")
+            
+        validate_image_payload(data, "")
         hashes.append(sha256_bytes(data))
     return hashes
 
@@ -527,7 +533,15 @@ def new_data_urls(github: GitHub, pull_request):
             continue
         base_filename = item.get("previous_filename", filename)
         base_entries = github.pr_file_json(REPOSITORY, base_filename, base["sha"])
-        head_entries = [] if item.get("status") == "removed" else github.read_blob_json(item.get("sha"))
+        if item.get("status") == "removed":
+            head_entries = []
+        else:
+            try:
+                head_raw = subprocess.check_output(["git", "show", f"FETCH_HEAD:{filename}"]).decode("utf-8")
+                head_entries = [e for e in json.loads(head_raw) if isinstance(e, dict)]
+            except Exception as exc:
+                print(f"::warning::读取 PR JSON 文件失败: {exc}")
+                head_entries = []
         old_urls = canonical_urls_from_entries(base_entries)
         new_urls_in_head = canonical_urls_from_entries(head_entries)
         additions.extend(added_canonical_urls(old_urls, new_urls_in_head))
@@ -801,6 +815,14 @@ def process_pull_request(github: GitHub, pull_request):
     if (pull_request.get("base") or {}).get("ref") != "main":
         print(f"PR #{number} does not target main; hash check is skipped.")
         return
+    try:
+        subprocess.run(
+            ["git", "fetch", "--depth=1", "origin", f"pull/{number}/head"],
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise BotError(f"无法拉取 PR #{number} 的 Git 数据: {exc.stderr.decode()}")
     urls = new_data_urls(github, pull_request)
     claim_matches = CLAIM_PATTERN.findall(pull_request.get("body") or "")
     if not urls and not claim_matches:
