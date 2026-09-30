@@ -176,12 +176,37 @@ def github_image_url(url: str) -> str | None:
         raise BotError(errors[0])
     if canonical.startswith("assets/placeholders/"):
         return None
-    parsed = urlsplit(canonical)
-    segments = parsed.path.split("/")
-    owner, repository = segments[1:3]
-    commit = segments[4]
-    path = "/".join(segments[5:])
-    return f"https://raw.githubusercontent.com/{owner}/{repository}/{commit}/{path}"
+
+    path_clean = urlsplit(canonical).path.lstrip("/")
+    parts = path_clean.split("/")
+    default_repo = REPOSITORY.split("/")[-1]
+
+    # 适配: <Github用户名>/<40位commit>/assets/memes/xxx.gif
+    if (
+        len(parts) >= 3
+        and len(parts[1]) == 40
+        and all(c in "0123456789abcdefABCDEF" for c in parts[1])
+    ):
+        owner = parts[0]
+        commit = parts[1]
+        repo = default_repo
+        file_path = "/".join(parts[2:])
+        return f"https://raw.githubusercontent.com/{owner}/{repo}/{commit}/{file_path}"
+
+    # 适配完整 GitHub 链接: owner/repo/raw(或blob)/commit/path
+    if len(parts) >= 5 and parts[2] in {"raw", "blob"}:
+        owner, repo = parts[0], parts[1]
+        commit = parts[3]
+        file_path = "/".join(parts[4:])
+        return f"https://raw.githubusercontent.com/{owner}/{repo}/{commit}/{file_path}"
+
+    # 适配标准的 raw 链接: owner/repo/commit/path
+    if len(parts) >= 4:
+        owner, repo, commit = parts[0], parts[1], parts[2]
+        file_path = "/".join(parts[3:])
+        return f"https://raw.githubusercontent.com/{owner}/{repo}/{commit}/{file_path}"
+
+    raise BotError(f"无法解析图片 URL 格式: {canonical}")
 
 
 class GitHub:
@@ -803,6 +828,9 @@ def process_pull_request(github: GitHub, pull_request):
         issue_comment_id = None
         if claim_code:
             issue_comment_id, issue_record = find_claim_comment(state, claim_code)
+            print(f"::notice::[DEBUG] urls = {urls}")
+            print(f"::notice::[DEBUG] PR hashes = {hashes}")
+            print(f"::notice::[DEBUG] Issue expected hashes = {issue_record.get('hashes', []) if issue_record else 'None (未找到认领记录)'}")
             if issue_record is None:
                 release_previous()
                 result.update(ok=False, reason="The issue claim code is unknown or expired.")
