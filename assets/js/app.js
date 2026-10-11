@@ -1268,7 +1268,7 @@
     } catch (err) {
       return;
     }
-    if (!pet || !pet.sheet || !Array.isArray(pet.animations) || !pet.animations.length) return;
+    if (!pet || !pet.sheet || !Array.isArray(pet.animations) || !pet.animations.some((item) => item && item.id === "idle")) return;
     const narrow = (window.innerWidth || 1024) < 600;
     window.NaiPet.start({
       sheet: pet.sheet,
@@ -1284,6 +1284,7 @@
       onHide: syncPetButton
     });
     syncPetButton();
+    syncPetPause();
   }
 
   function voiceSources() {
@@ -1660,8 +1661,8 @@
     if (PAGE_SIZES.includes(storedSize)) state.pageSize = storedSize;
 
     applyRepoLinks();
-    previousTheme = storageGet("nai-theme-base") || "auto";
-    applyTheme(storageGet("nai-theme") || "auto");
+    previousTheme = storageGet("nai-theme-base") || "naiwa";
+    applyTheme(storageGet("nai-theme") || "naiwa");
     if (window.GhImg) {
       window.GhImg.configure({ repo: CONFIG.repo });
       window.GhImg.decorate(document.querySelectorAll(".hero-visual img"));

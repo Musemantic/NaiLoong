@@ -120,9 +120,8 @@
 }
 
 /* 这些文字直接画在页面背景上，没有自己的底板，所以抬到眼睛之上；
-   拼图、卡片自带不透明底板，留在眼睛下面。 */
+   拼图、卡片自带不透明底板，也画在眼睛上面。 */
 :root[data-theme="naiwa"] .hero-copy,
-:root[data-theme="naiwa"] .sidebar,
 :root[data-theme="naiwa"] .toolbar,
 :root[data-theme="naiwa"] .tag-panel,
 :root[data-theme="naiwa"] .role-intro,
@@ -132,6 +131,45 @@
 :root[data-theme="naiwa"] .site-footer {
   position: relative;
   z-index: 1;
+}
+
+/* 保留侧栏自身的 sticky / 窄屏 static 定位，不能用 relative 覆盖其 top 偏移。 */
+:root[data-theme="naiwa"] .sidebar {
+  z-index: 1;
+}
+
+/* 眼睛和嘴是实色，文字与透明控件需要底色才能在图形经过时保持清晰。 */
+:root[data-theme="naiwa"] .chip,
+:root[data-theme="naiwa"] .tag-group-label,
+:root[data-theme="naiwa"] .count,
+:root[data-theme="naiwa"] .tabs,
+:root[data-theme="naiwa"] .toolbar-meta,
+:root[data-theme="naiwa"] .pager-info,
+:root[data-theme="naiwa"] .pager-btn,
+:root[data-theme="naiwa"] .side-item,
+:root[data-theme="naiwa"] .btn-secondary,
+:root[data-theme="naiwa"] .site-footer {
+  background: var(--bg);
+}
+
+:root[data-theme="naiwa"] .hero-title,
+:root[data-theme="naiwa"] .hero-lead,
+:root[data-theme="naiwa"] .hero-stats,
+:root[data-theme="naiwa"] .role-intro {
+  width: fit-content;
+  background: var(--bg);
+}
+
+:root[data-theme="naiwa"] .side-item.is-active {
+  background: var(--surface);
+}
+
+:root[data-theme="naiwa"] .chip.is-on {
+  background: var(--surface);
+}
+
+:root[data-theme="naiwa"] .pager-btn.is-on {
+  background: var(--primary);
 }
 
 .naiwa-eye {
@@ -247,8 +285,8 @@
   }
 }
 
-@media (max-width: 700px) {
-  /* 窄屏首屏要给正文让位，背景眼睛只在更宽的视口出现。 */
+@media (max-width: 1011px) {
+  /* 单列首屏的文字占满宽度，平板与手机都让背景眼睛给正文让位。 */
   :root[data-theme="naiwa"] .naiwa-backdrop {
     display: none;
   }
@@ -563,6 +601,8 @@ code {
   font-weight: 600;
   font-size: 18px;
   letter-spacing: -0.3px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .brand-mark {
@@ -1685,7 +1725,7 @@ code {
 
 .pet-bubble {
   position: absolute;
-  left: 50%;
+  left: calc(50% + var(--pet-bubble-shift, 0px));
   bottom: calc(100% - 4px);
   max-width: min(240px, 60vw);
   padding: var(--sp-2) var(--sp-3);
@@ -1709,7 +1749,7 @@ code {
 .pet-bubble::after {
   content: "";
   position: absolute;
-  left: 50%;
+  left: calc(50% - var(--pet-bubble-shift, 0px));
   bottom: -7px;
   width: 12px;
   height: 12px;
@@ -1723,6 +1763,11 @@ code {
 .pet-bubble.is-on {
   opacity: 1;
   transform: translateX(-50%) scale(1);
+}
+
+.pet-bubble.is-below {
+  top: calc(100% + 4px);
+  bottom: auto;
 }
 
 .pet-menu {
@@ -2509,6 +2554,11 @@ code {
   }
 
   .header-actions .star-btn {
+    display: none;
+  }
+
+  .header-actions [data-naiwa-toggle],
+  .header-actions [data-pet-toggle] {
     display: none;
   }
 

@@ -675,7 +675,8 @@ class PullRequestReadingTests(unittest.TestCase):
         url = f"contributor/{sha}/meme.png"
         github = Mock()
         github.get_pr_files.return_value = [{"filename": "data/naiwa/static.json", "status": "added"}]
-        github.pr_file_json.side_effect = [[], [{"url": url}]]
+        manifest = [{"id": "naiwa", "subcategories": [{"file": "naiwa/static.json"}]}]
+        github.pr_file_json.side_effect = [manifest, manifest, [{"url": url}]]
         pr = {
             "number": 7, "base": {"sha": "b" * 40},
             "head": {"sha": sha, "repo": {"full_name": "contributor/NaiLoong"}},
@@ -684,7 +685,10 @@ class PullRequestReadingTests(unittest.TestCase):
             f"https://github.com/contributor/NaiLoong/blob/{sha}/meme.png"
         ])
         github.get_pr_files.assert_called_once_with(7, expected_head_sha=sha)
-        self.assertEqual(github.pr_file_json.call_args_list[1].args[-1], sha)
+        self.assertEqual(github.pr_file_json.call_args_list[-1].args[-1], sha)
+        self.assertEqual(github.pr_file_json.call_args_list[1].args, (
+            "contributor/NaiLoong", "data/manifest.json", sha,
+        ))
         github.pr_file_json.side_effect = meme_hash.BotError("read failed")
         with self.assertRaisesRegex(meme_hash.BotError, "read failed"):
             meme_hash.new_data_urls(github, pr)
@@ -697,10 +701,91 @@ class PullRequestReadingTests(unittest.TestCase):
             {"filename": "data/naiwa/voice.json", "status": "added"},
             {"filename": "data/naiwa/tags.json", "status": "modified"},
             {"filename": "data/pet.json", "status": "added"},
+            {"filename": "data/naiwa/speech.json", "status": "added"},
+            {"filename": "data/naiwa/custom-tags.json", "status": "modified"},
         ]
+        github.pr_file_json.return_value = [{
+            "id": "naiwa", "voice": "naiwa/speech.json", "tags": "naiwa/custom-tags.json",
+            "subcategories": [{"file": "naiwa/static.json"}],
+        }]
         pr = {
             "number": 9, "base": {"sha": "b" * 40},
             "head": {"sha": sha, "repo": {"full_name": "contributor/NaiLoong"}},
+        }
+        self.assertEqual(meme_hash.new_data_urls(github, pr), [])
+        self.assertEqual([call.args[1] for call in github.pr_file_json.call_args_list], [
+            "data/manifest.json", "data/manifest.json",
+        ])
+
+    def test_new_category_and_renamed_files_follow_each_commit_manifest(self):
+        sha = "a" * 40
+        url = f"contributor/{sha}/meme.png"
+        pr = {
+            "number": 9, "base": {"sha": "b" * 40},
+            "head": {"sha": sha, "repo": {"full_name": "contributor/NaiLoong"}},
+        }
+        for status in ("added", "renamed", "removed", "modified"):
+            with self.subTest(status=status):
+                github = Mock()
+                old = "data/naiwa/old.json"
+                new = "data/naiwa/special.json"
+                github.get_pr_files.return_value = [{
+                    "filename": old if status == "removed" else new,
+                    "previous_filename": old, "status": status,
+                }]
+                base_manifest = [{"subcategories": [{"file": "naiwa/old.json"}]}]
+                head_manifest = [{"subcategories": [{"file": "naiwa/special.json"}]}]
+                old_url = f"contributor/{'c' * 40}/old.png"
+                contents = [base_manifest, head_manifest]
+                if status != "added":
+                    contents.append([{"url": old_url}])
+                if status != "removed":
+                    contents.append([{"url": old_url}, {"url": url}])
+                github.pr_file_json.side_effect = contents
+                expected = [] if status == "removed" else [
+                    f"https://github.com/contributor/NaiLoong/blob/{sha}/meme.png"
+                ]
+                if status == "added":
+                    expected.insert(0, f"https://github.com/contributor/NaiLoong/blob/{'c' * 40}/old.png")
+                self.assertEqual(meme_hash.new_data_urls(github, pr), expected)
+
+    def test_category_url_errors_identify_the_file_and_entry(self):
+        sha = "a" * 40
+        github = Mock()
+        github.get_pr_files.return_value = [{"filename": "data/naiwa/static.json", "status": "added"}]
+        manifest = [{"subcategories": [{"file": "naiwa/static.json"}]}]
+        pr = {
+            "number": 9, "base": {"sha": "b" * 40},
+            "head": {"sha": sha, "repo": {"full_name": "contributor/NaiLoong"}},
+        }
+        for entry in ({"url": ""}, {"text": "hello", "src": "assets/audio/hello.mp3"}):
+            with self.subTest(entry=entry):
+                github.pr_file_json.side_effect = [manifest, manifest, [entry]]
+                with self.assertRaisesRegex(meme_hash.BotError, 'data/naiwa/static.json entry #0: "url"'):
+                    meme_hash.new_data_urls(github, pr)
+
+    def test_manifest_failure_does_not_silently_skip_image_checks(self):
+        github = Mock()
+        github.get_pr_files.return_value = [{"filename": "data/naiwa/static.json", "status": "added"}]
+        pr = {
+            "number": 9, "base": {"sha": "b" * 40},
+            "head": {"sha": "a" * 40, "repo": {"full_name": "contributor/NaiLoong"}},
+        }
+        for manifest in ([], [{"subcategories": []}], [{"subcategories": [{"file": "../other.json"}]}]):
+            with self.subTest(manifest=manifest):
+                github.pr_file_json.return_value = manifest
+                with self.assertRaisesRegex(meme_hash.BotError, "data/manifest.json"):
+                    meme_hash.new_data_urls(github, pr)
+        github.pr_file_json.side_effect = meme_hash.BotError("manifest read failed")
+        with self.assertRaisesRegex(meme_hash.BotError, "manifest read failed"):
+            meme_hash.new_data_urls(github, pr)
+
+    def test_code_only_pr_needs_no_manifest_or_image_reads(self):
+        github = Mock()
+        github.get_pr_files.return_value = [{"filename": "assets/js/app.js", "status": "modified"}]
+        pr = {
+            "number": 9, "base": {"sha": "b" * 40},
+            "head": {"sha": "a" * 40, "repo": {"full_name": "contributor/NaiLoong"}},
         }
         self.assertEqual(meme_hash.new_data_urls(github, pr), [])
         github.pr_file_json.assert_not_called()

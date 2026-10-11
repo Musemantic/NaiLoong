@@ -182,7 +182,7 @@
     el.themeIcon = $("themeIcon");
 
     ICONS.hydrate(document);
-    applyTheme(storageGet("nai-theme") || "auto");
+    applyTheme(storageGet("nai-theme") || "naiwa");
     el.themeToggle.addEventListener("click", cycleTheme);
     window.addEventListener("hashchange", route);
     route();

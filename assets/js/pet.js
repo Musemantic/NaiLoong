@@ -125,12 +125,27 @@
   // 走路朝向由素材行决定（walk-right / walk-left），不需要镜像翻转。
   function faceForMovement() {
     const wanted = velocity.x >= 0 ? "walk-right" : "walk-left";
-    if (state !== "run" && state !== wanted) setState(wanted, 0);
+    if (state !== "run" && state !== wanted) {
+      const remaining = stateUntil ? Math.max(1, stateUntil - Date.now()) : 0;
+      setState(wanted, remaining);
+    }
   }
 
   function applyTransform() {
     if (!node) return;
     node.style.transform = "translate3d(" + Math.round(x) + "px," + Math.round(-y) + "px,0)";
+    positionBubble();
+  }
+
+  function positionBubble() {
+    if (!node || !bubble || bubble.hidden) return;
+    const rect = node.getBoundingClientRect();
+    const width = bubble.offsetWidth;
+    const center = rect.left + rect.width / 2;
+    const half = width / 2;
+    const clamped = Math.min(viewport().width - half - 8, Math.max(half + 8, center));
+    bubble.style.setProperty("--pet-bubble-shift", clamped - center + "px");
+    bubble.classList.toggle("is-below", rect.top < bubble.offsetHeight + 8);
   }
 
   function nextFromDeck() {
@@ -236,7 +251,7 @@
 
     if (stateUntil && Date.now() >= stateUntil) {
       stateUntil = 0;
-      if (state !== "idle") setState("idle", 0);
+      if (state !== "idle") setState("idle", 1200);
       else if (!reducedMotion) pickIdleAction();
       else setState("idle", 3000);
       if (Date.now() - lastTouch > SLEEP_AFTER) setState("sleep", 0);
@@ -265,6 +280,7 @@
     if (!bubble) return;
     bubble.textContent = text;
     bubble.hidden = false;
+    positionBubble();
     bubble.classList.remove("is-on");
     void bubble.offsetWidth;
     bubble.classList.add("is-on");
@@ -290,6 +306,7 @@
   }
 
   function beginDrag(event) {
+    if (drag) return;
     const rect = node.getBoundingClientRect();
     drag = {
       id: event.pointerId,
@@ -325,20 +342,22 @@
     drag.lastY = event.clientY;
     drag.t = now;
     x = clampX(event.clientX - drag.dx);
-    y = Math.max(0, viewport().height - (event.clientY - drag.dy) - rect.height);
+    y = Math.min(Math.max(0, viewport().height - rect.height),
+      Math.max(0, viewport().height - (event.clientY - drag.dy) - rect.height));
     facing = stepX > 0.6 ? 1 : stepX < -0.6 ? -1 : facing;
     applyTransform();
   }
 
   function endDrag(event) {
     if (!drag || (event && drag.id !== event.pointerId)) return;
-    const quick = drag.moved < CLICK_SLOP && performance.now() - drag.down < CLICK_MS;
+    const quick = event && event.type !== "pointercancel" && event.type !== "lostpointercapture" &&
+      drag.moved < CLICK_SLOP && performance.now() - drag.down < CLICK_MS;
     const vx = drag.vx;
     const vy = drag.vy;
     drag = null;
     node.classList.remove("is-dragging");
     try {
-      node.releasePointerCapture && node.releasePointerCapture(event.pointerId);
+      if (event) node.releasePointerCapture && node.releasePointerCapture(event.pointerId);
     } catch (err) {
     }
     if (quick) {
@@ -411,7 +430,7 @@
     const width = menu.offsetWidth || 132;
     const height = menu.offsetHeight || 150;
     menu.style.left = Math.max(6, Math.min(window.innerWidth - width - 6, rect.left)) + "px";
-    menu.style.top = Math.max(6, rect.top - height - 6) + "px";
+    menu.style.top = Math.max(6, Math.min(viewport().height - height - 6, rect.top - height - 6)) + "px";
     document.addEventListener("pointerdown", onDocPointer, true);
   }
 
@@ -491,6 +510,7 @@
     node.addEventListener("pointermove", moveDrag);
     node.addEventListener("pointerup", endDrag);
     node.addEventListener("pointercancel", endDrag);
+    node.addEventListener("lostpointercapture", endDrag);
     node.addEventListener("dblclick", () => {
       wake();
       setState("cheer", 1800);
@@ -519,7 +539,9 @@
       }
     });
     window.addEventListener("resize", () => {
+      if (!node) return;
       x = clampX(x);
+      y = Math.min(y, Math.max(0, viewport().height - node.offsetHeight));
       applyTransform();
     });
   }
@@ -530,7 +552,7 @@
       !options ||
       !options.sheet ||
       !Array.isArray(options.animations) ||
-      !options.animations.length
+      !options.animations.some((item) => item && item.id === "idle")
     ) {
       return;
     }
@@ -572,6 +594,9 @@
     if (!running) return;
     window.cancelAnimationFrame(frameId);
     window.clearInterval(sleepTimer);
+    window.clearTimeout(bubbleTimer);
+    frameId = 0;
+    drag = null;
     sleepTimer = 0;
     if (node) node.remove();
     node = sprite = bubble = null;
@@ -583,11 +608,13 @@
     paused = !!value;
     if (!node) return;
     node.classList.toggle("is-paused", paused);
+    node.tabIndex = paused ? -1 : 0;
     if (paused) {
       closeMenu();
       if (isMoving() || state === "cheer") setState("idle", 0);
     } else {
       wake();
+      if (state === "idle" && !stateUntil) setState("idle", 1400);
     }
   }
 
