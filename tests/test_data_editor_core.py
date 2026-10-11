@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -330,6 +330,48 @@ class DataEditorAITests(unittest.TestCase):
         self.assertEqual(selected[-1], 23)
         self.assertEqual(selected, sorted(set(selected)))
 
+    def test_ffmpeg_prefers_current_process_path(self):
+        with patch.object(data_editor_ai.shutil, "which", return_value="/tools/ffmpeg") as which:
+            self.assertEqual(data_editor_ai._find_ffmpeg(), "/tools/ffmpeg")
+        which.assert_called_once_with("ffmpeg")
+
+    def test_ffmpeg_reads_saved_windows_paths_when_process_path_is_stale(self):
+        registry = MagicMock()
+        registry.QueryValueEx.side_effect = [
+            (r"%SystemRoot%\System32", 2), (r"D:\工具\ffmpeg\bin", 1),
+        ]
+        registry.ExpandEnvironmentStrings.side_effect = [r"C:\Windows\System32", r"D:\工具\ffmpeg\bin"]
+        executable = r"D:\工具\ffmpeg\bin\ffmpeg.exe"
+        with patch.object(data_editor_ai.sys, "platform", "win32"), \
+                patch.dict("sys.modules", {"winreg": registry}), \
+                patch.object(data_editor_ai.shutil, "which", side_effect=[None, executable]) as which:
+            self.assertEqual(data_editor_ai._find_ffmpeg(), executable)
+        self.assertEqual(registry.OpenKey.call_count, 2)
+        which.assert_called_with("ffmpeg", path=r"C:\Windows\System32;D:\工具\ffmpeg\bin")
+
+    def test_ffmpeg_missing_from_windows_paths_explains_how_to_restart(self):
+        for unreadable in (False, True):
+            registry = MagicMock()
+            registry.QueryValueEx.return_value = (r"C:\tools", 1)
+            registry.ExpandEnvironmentStrings.return_value = r"C:\tools"
+            if unreadable:
+                registry.OpenKey.side_effect = OSError("registry unavailable")
+            with self.subTest(unreadable=unreadable), \
+                    patch.object(data_editor_ai.sys, "platform", "win32"), \
+                    patch.dict("sys.modules", {"winreg": registry}), \
+                    patch.object(data_editor_ai.shutil, "which", return_value=None), \
+                    self.assertRaisesRegex(EditorError, "关闭旧终端.*重启 IDE"):
+                data_editor_ai._find_ffmpeg()
+
+    def test_ffmpeg_missing_on_other_platforms_does_not_read_windows_registry(self):
+        registry = MagicMock()
+        with patch.object(data_editor_ai.sys, "platform", "linux"), \
+                patch.dict("sys.modules", {"winreg": registry}), \
+                patch.object(data_editor_ai.shutil, "which", return_value=None), \
+                self.assertRaisesRegex(EditorError, "未找到 ffmpeg"):
+            data_editor_ai._find_ffmpeg()
+        registry.OpenKey.assert_not_called()
+
     def test_gif_conversion_keeps_full_clip_and_extracts_only_distinct_frames(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
@@ -346,11 +388,13 @@ class DataEditorAITests(unittest.TestCase):
                         Path(command[-1].replace("%03d", f"{index:03d}")).write_bytes(f"jpeg-{index}".encode())
                 return subprocess.CompletedProcess(command, 0, b"", b"Duration: 00:00:12.00")
 
-            with patch.object(data_editor_ai.subprocess, "run", side_effect=run) as mocked:
+            with patch.object(data_editor_ai, "_find_ffmpeg", return_value="/tools/ffmpeg"), \
+                    patch.object(data_editor_ai.subprocess, "run", side_effect=run) as mocked:
                 video, frames = _run_ffmpeg(source, directory)
             self.assertEqual(video, b"mp4")
             self.assertEqual(frames, [(0, b"jpeg-1"), (.375, b"jpeg-2")])
             conversion = mocked.call_args_list[0].args[0]
+            self.assertTrue(all(call.args[0][0] == "/tools/ffmpeg" for call in mocked.call_args_list))
             self.assertNotIn("-t", conversion)
             extraction = mocked.call_args_list[-1].args[0]
             self.assertIn("eq(n\\,0)+eq(n\\,3)", extraction[extraction.index("-vf") + 1])
@@ -362,10 +406,24 @@ class DataEditorAITests(unittest.TestCase):
             source.write_bytes(b"gif")
             def run(command, **_kwargs):
                 Path(command[-1]).write_bytes(b"mp4")
-            with patch.object(data_editor_ai.subprocess, "run", side_effect=run) as mocked:
+            with patch.object(data_editor_ai, "_find_ffmpeg", return_value="/tools/ffmpeg"), \
+                    patch.object(data_editor_ai.subprocess, "run", side_effect=run) as mocked:
                 video, frames = _run_ffmpeg(source, directory, extract_frames=False)
             self.assertEqual((video, frames), (b"mp4", []))
             self.assertEqual(mocked.call_count, 1)
+
+    def test_bmp_conversion_uses_resolved_ffmpeg_path(self):
+        def run(command, **_kwargs):
+            Path(command[-1]).write_bytes(b"jpeg")
+
+        with patch.object(data_editor_ai, "git", return_value=b"bmp"), \
+                patch.object(data_editor_ai, "_find_ffmpeg", return_value="/tools/ffmpeg"), \
+                patch.object(data_editor_ai.subprocess, "run", side_effect=run) as mocked:
+            media = data_editor_ai._media_parts(
+                Path("."), {"head": "a" * 40}, {"path": "picture.bmp", "media_type": "static"}, "openai",
+            )
+        self.assertEqual(media, [("image/jpeg", "picture.bmp", b"jpeg")])
+        self.assertEqual(mocked.call_args.args[0][0], "/tools/ffmpeg")
 
     def test_gemini_video_upload_uses_files_resumable_headers_and_mime(self):
         class Response:
@@ -477,7 +535,8 @@ class DataEditorServerTests(unittest.TestCase):
                 self.assertIn("差异编辑器", response.read().decode("utf-8"))
             with urlopen(base + "/api/project") as response:
                 project = json.loads(response.read().decode("utf-8"))
-            self.assertEqual({role["id"] for role in project["roles"]}, {"naiwa", "naidan"})
+            manifest = json.loads((root / "data" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual({role["id"] for role in project["roles"]}, {role["id"] for role in manifest})
             with urlopen(base + "/assets/js/editor.js") as response:
                 self.assertIn("确认并写入数据", response.read().decode("utf-8"))
             with urlopen(base + "/assets/css/docs.css") as response:

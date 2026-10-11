@@ -6,7 +6,9 @@ import base64
 import json
 import math
 import re
+import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -30,6 +32,37 @@ MAX_MEDIA_BYTES = 5 * 1024 * 1024
 MAX_FRAME_CANDIDATES = 160
 MAX_UPLOAD_FRAMES = 12
 FRAME_SIGNATURE_BYTES = 32 * 32 * 3
+
+
+def _find_ffmpeg() -> str:
+    executable = shutil.which("ffmpeg")
+    if executable:
+        return executable
+    if sys.platform == "win32":
+        # Existing terminals keep their old environment after PATH is edited.
+        # Read the saved paths without replacing the process environment.
+        import winreg
+
+        paths = []
+        for hive, key in (
+            (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+            (winreg.HKEY_CURRENT_USER, r"Environment"),
+        ):
+            try:
+                with winreg.OpenKey(hive, key) as handle:
+                    value, _kind = winreg.QueryValueEx(handle, "Path")
+                if isinstance(value, str):
+                    paths.append(winreg.ExpandEnvironmentStrings(value))
+            except OSError:
+                continue
+        if paths:
+            executable = shutil.which("ffmpeg", path=";".join(paths))
+            if executable:
+                return executable
+    raise EditorError(
+        "未找到 ffmpeg。动画识别和 BMP 转换需要安装 ffmpeg，并将包含 ffmpeg 可执行文件的 bin 目录加入 PATH。"
+        "如果刚修改 PATH，请关闭旧终端，打开新终端后重新启动编辑器；从 IDE 启动时也需重启 IDE。"
+    )
 
 
 def _b64(content: bytes) -> str:
@@ -63,10 +96,11 @@ def _distinct_frame_indices(signatures: list[bytes], limit: int = MAX_UPLOAD_FRA
 
 
 def _run_ffmpeg(source: Path, directory: Path, extract_frames: bool = True) -> tuple[bytes, list[tuple[float, bytes]]]:
+    ffmpeg = _find_ffmpeg()
     mp4 = directory / "clip.mp4"
     try:
         subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
+            [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
              "-vf", "scale='min(768,iw)':'min(768,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1",
              "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(mp4)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=90,
@@ -74,7 +108,7 @@ def _run_ffmpeg(source: Path, directory: Path, extract_frames: bool = True) -> t
         if not extract_frames:
             return mp4.read_bytes(), []
         metadata = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-i", str(mp4)],
+            [ffmpeg, "-hide_banner", "-i", str(mp4)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=15,
         )
         duration_match = re.search(rb"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", metadata.stderr)
@@ -86,7 +120,7 @@ def _run_ffmpeg(source: Path, directory: Path, extract_frames: bool = True) -> t
             raise EditorError("视频时长无效，无法抽帧。")
         fps = min(8, MAX_FRAME_CANDIDATES / duration)
         decoded = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(mp4),
+            [ffmpeg, "-hide_banner", "-loglevel", "error", "-i", str(mp4),
              "-vf", f"fps={fps:.8f}:round=up,scale=32:32", "-frames:v", str(MAX_FRAME_CANDIDATES),
              "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=90,
@@ -99,7 +133,7 @@ def _run_ffmpeg(source: Path, directory: Path, extract_frames: bool = True) -> t
         # Extract only the chosen frames at readable resolution in one pass.
         selection = "+".join(f"eq(n\\,{index})" for index in selected)
         subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(mp4),
+            [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(mp4),
              "-vf", f"fps={fps:.8f}:round=up,select='{selection}'",
              "-vsync", "vfr", "-q:v", "3", "-frames:v", str(len(selected)), str(directory / "frame-%03d.jpg")],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=90,
@@ -140,6 +174,7 @@ def _media_parts(root: Path, scan: dict, item: dict, provider: str) -> list[tupl
         ".webp": "image/webp",
     }.get(extension)
     if extension == ".bmp":
+        ffmpeg = _find_ffmpeg()
         with tempfile.TemporaryDirectory(prefix="nailoong-ai-still-") as temporary:
             directory = Path(temporary)
             source = directory / "source.bmp"
@@ -147,7 +182,7 @@ def _media_parts(root: Path, scan: dict, item: dict, provider: str) -> list[tupl
             source.write_bytes(content)
             try:
                 subprocess.run(
-                    ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
+                    [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
                      "-frames:v", "1", str(target)],
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=60,
                 )

@@ -341,6 +341,12 @@ git push -u origin meme/naiwa-laugh
 
 ## 常见问题 / FAQ
 
+### 安装了 ffmpeg，为什么仍提示找不到？
+
+PATH 应添加包含 `ffmpeg.exe` 的 `bin` 目录，而不是可执行文件本身。安装或修改 PATH 后，已打开的终端仍保留旧环境；所以需要关闭旧终端。重新打开后运行 `ffmpeg -version`，应输出版本信息。从 VS Code 等 IDE 的终端启动时，也需要重新打开 IDE。
+
+用 `Ctrl+C` 停止正在运行的编辑器，再运行 `python scripts/data_editor.py data`。刷新网页不会重启 Python 服务。Windows 上编辑器在当前进程找不到 ffmpeg 时，会尝试读取最新保存的用户与系统 PATH。
+
 ### 合并后可以删除 JSON 工作分支吗？
 
 可以，它已经完成这次投稿的合并。可在自己的 Fork 分支列表中删除 GitHub 上的 `meme/...` 分支；PR 页面默认提供 **Delete branch** 按钮。保留它也没有影响，下一次使用新的工作分支即可。
