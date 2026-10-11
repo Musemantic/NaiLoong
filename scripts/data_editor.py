@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Small Tkinter editor for the data directory.
+"""Local data editors for the data directory.
 
-The editor discovers roles, categories, and tag dimensions from manifest.json
-and each role's tags.json. It intentionally has no project-specific IDs in
-the UI code, so the same tool works after the data directory grows.
+The browser editor is the default entry point. The Tkinter editor is retained
+for local role, category, and tag-structure maintenance.
 """
 
 from __future__ import annotations
@@ -1026,7 +1025,20 @@ class DataEditor:
 
 def main(argv=None) -> int:
     argv = argv or sys.argv[1:]
-    data_dir = Path(argv[0]) if argv else None
+    legacy_tk = bool(argv and argv[0] == "--tk")
+    if legacy_tk:
+        argv = argv[1:]
+    data_dir = Path(argv[0]) if argv else Path("data")
+    if not legacy_tk:
+        try:
+            from .data_editor_server import serve
+        except ImportError:
+            from data_editor_server import serve
+        try:
+            return serve(data_dir)
+        except (OSError, ValueError) as exc:
+            print(f"无法启动浏览器编辑器：{exc}", file=sys.stderr)
+            return 1
     try:
         _load_tkinter()
     except ImportError:

@@ -1,0 +1,107 @@
+.contribute-page { background: var(--bg); }
+.contribute-page .header-actions { display: flex; gap: 8px; }
+.contribute-intro { background: var(--surface-2); border-bottom: 1px solid var(--border-muted); }
+.intro-inner { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 420px); align-items: center; gap: 48px; min-height: 292px; padding-top: 24px; padding-bottom: 24px; }
+.intro-copy { max-width: 650px; }
+.intro-copy h1 { margin: 5px 0 12px; font-size: 34px; line-height: 1.2; font-weight: 650; }
+.intro-copy > p:not(.eyebrow) { max-width: 600px; margin-bottom: 18px; color: var(--muted); font-size: 16px; }
+.intro-copy .btn { padding: 9px 14px; }
+.intro-meme { display: grid; grid-template-columns: minmax(100px, 1fr) auto; align-items: center; gap: 12px; min-width: 0; }
+.intro-meme img { width: 100%; max-height: 232px; object-fit: contain; object-position: center; }
+.intro-meme figcaption { max-width: 82px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+.lesson { padding-top: 38px; padding-bottom: 52px; }
+.lesson-topline { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; }
+.lesson-topline h2 { margin-top: 4px; font-size: 22px; font-weight: 620; }
+.time-estimate { color: var(--muted); font-size: 13px; }
+.lesson-progress { height: 3px; margin-top: 17px; background: var(--border-muted); }
+.lesson-progress span { display: block; width: 16.666%; height: 100%; background: var(--primary); transition: width 350ms ease; }
+.lesson-layout { display: grid; grid-template-columns: 244px minmax(0, 1fr); gap: 54px; padding-top: 24px; }
+.lesson-rail { min-width: 0; }
+.lesson-rail > ol { display: grid; gap: 3px; list-style: none; padding: 0; margin: 0; }
+.lesson-rail > ol button { display: grid; width: 100%; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 9px; padding: 8px 9px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--muted); text-align: left; font: inherit; cursor: pointer; }
+.lesson-rail > ol button:hover { background: var(--surface); color: var(--text); }
+.lesson-rail > ol button[aria-current="step"] { background: var(--surface); border-color: var(--border-muted); color: var(--text); }
+.step-nav-number { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--border); border-radius: 50%; font: 12px var(--mono); }
+.lesson-rail > ol button[aria-current="step"] .step-nav-number { border-color: var(--accent); color: var(--accent); }
+.step-nav-name { overflow-wrap: anywhere; font-size: 13px; }
+.git-visual { margin-top: 20px; padding-top: 13px; border-top: 1px solid var(--border-muted); }
+.git-visual-heading { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 11px; }
+.git-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 10px; }
+.git-legend i { display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: #0969da; }
+.git-legend i:nth-of-type(2) { background: #1f883d; }
+.git-legend i:nth-of-type(3) { background: #bf8700; }
+.git-visual svg { width: 100%; margin-top: 6px; overflow: visible; }
+.git-visual text { fill: var(--muted); font: 10px var(--mono); }
+.branch-line { fill: none; stroke-width: 2; }
+.main-line { stroke: #0969da; }
+.image-line { stroke: #1f883d; }
+.work-line { stroke: #bf8700; }
+.commit-node circle { fill: var(--surface-2); stroke-width: 2; }
+.node-main circle { stroke: #0969da; }
+.node-image circle { stroke: #1f883d; }
+.node-work circle { stroke: #bf8700; }
+.active-pulse { fill: none; stroke: var(--accent); stroke-width: 1.5; transform-origin: center; animation: node-pulse 1.7s ease-out infinite; }
+@keyframes node-pulse { 0% { opacity: .9; transform: scale(.65); } 100% { opacity: 0; transform: scale(1.65); } }
+
+.lesson-content { min-width: 0; max-width: 790px; }
+.step-description { max-width: 760px; color: var(--muted); font-size: 15px; line-height: 1.65; }
+.step-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.step-actions .btn { padding: 7px 11px; font-size: 13px; }
+.step-callout { margin-top: 18px; padding: 10px 13px; border-left: 3px solid var(--accent); background: var(--surface-2); color: var(--muted); font-size: 13px; line-height: 1.55; }
+.terminal { margin-top: 20px; border: 1px solid var(--border-muted); border-radius: 7px; overflow: hidden; background: var(--bg-subtle); }
+.terminal-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border-muted); color: var(--muted); font-size: 11px; }
+.terminal-head > span { display: flex; align-items: center; gap: 6px; }
+.terminal-head i { width: 7px; height: 7px; border-radius: 50%; background: #f85149; }
+.terminal-head i:nth-child(2) { background: #d29922; }
+.terminal-head i:nth-child(3) { background: #3fb950; }
+.copy-command { border: 1px solid var(--border); border-radius: 4px; background: transparent; color: var(--text); padding: 4px 8px; font: inherit; cursor: pointer; }
+.copy-command:hover { background: var(--surface-2); }
+.terminal pre { margin: 0; max-height: 320px; padding: 15px; overflow: auto; color: var(--text); font: 13px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.terminal pre code { padding: 0; border: 0; border-radius: 0; background: none; color: inherit; font: inherit; }
+.terminal > p { padding: 0 15px 13px; color: var(--muted); font-size: 12px; }
+.lesson-extra { margin-top: 14px; }
+.lesson-extra:empty { display: none; }
+.lesson-extra ul { margin: 10px 0 0; padding-left: 22px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+.lesson-controls { display: flex; justify-content: space-between; gap: 12px; margin-top: 24px; padding-top: 15px; border-top: 1px solid var(--border-muted); }
+.lesson-controls .btn { padding: 8px 13px; font-size: 13px; }
+.finish-band { border-top: 1px solid var(--border-muted); background: var(--surface-2); }
+.finish-inner { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding-top: 24px; padding-bottom: 24px; }
+.finish-inner h2 { margin: 3px 0 4px; font-size: 18px; }
+.finish-inner p:not(.eyebrow) { color: var(--muted); font-size: 13px; }
+.finish-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.finish-actions .btn { padding: 8px 11px; font-size: 13px; }
+.contribute-page .site-footer { padding-top: 16px; padding-bottom: 16px; }
+.contribute-page .footer-inner { align-items: center; }
+.contribute-page .footer-links { display: flex; gap: 18px; }
+.toast { position: fixed; z-index: 30; left: 50%; bottom: 20px; transform: translateX(-50%); padding: 9px 13px; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; box-shadow: var(--glow); font-size: 13px; }
+
+@media (max-width: 820px) {
+  .intro-inner { grid-template-columns: minmax(0, 1fr) minmax(190px, 300px); gap: 24px; }
+  .lesson-layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .lesson-rail > ol { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lesson-rail > ol button { grid-template-columns: 25px minmax(0, 1fr); padding: 7px 5px; }
+  .git-visual { display: none; }
+}
+@media (max-width: 540px) {
+  .intro-inner { grid-template-columns: minmax(0, 1fr) 120px; gap: 8px; min-height: 0; padding-top: 22px; padding-bottom: 22px; }
+  .intro-copy h1 { font-size: 25px; }
+  .intro-copy > p:not(.eyebrow) { font-size: 13px; line-height: 1.5; }
+  .intro-meme { display: block; }
+  .intro-meme img { max-height: 125px; }
+  .intro-meme figcaption { display: none; }
+  .intro-copy .btn { padding: 7px 9px; font-size: 13px; }
+  .contribute-page .header-actions .btn { padding: 7px 9px; font-size: 12px; }
+  .lesson { padding-top: 26px; padding-bottom: 36px; }
+  .lesson-topline h2 { font-size: 19px; }
+  .lesson-rail > ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .step-nav-name { font-size: 11px; }
+  .step-description { font-size: 14px; }
+  .terminal pre { font-size: 11px; }
+  .finish-inner { align-items: flex-start; flex-direction: column; }
+  .finish-actions { width: 100%; }
+  .contribute-page .footer-inner { align-items: flex-start; flex-direction: column; gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

@@ -9,6 +9,9 @@
 | 页面结构和文案 | `index.html` |
 | 布局、主题和样式 | `assets/css/style.css`；参照[前端样式参考](../github-design-system-analysis.md) |
 | 站内文档页和 Markdown 渲染 | `docs.html`、`assets/js/docs.js`、`assets/js/md.js`、`assets/css/docs.css` |
+| 交互式 Git 投稿教程 | `contribute.html`、`assets/js/contribute.js`、`assets/css/contribute.css` |
+| 本地浏览器数据差异编辑器 | `tools/data-editor/`、`assets/js/editor.js`、`scripts/data_editor_core.py`、`scripts/data_editor_server.py` |
+| 本地 AI 批量标注 | `scripts/data_editor_ai.py` |
 | 数据加载、路由、分页和页面交互 | `assets/js/app.js` |
 | 标签解析、搜索和筛选 | `assets/js/search.js` |
 | 图片地址转换、代理探测和失败回退 | `assets/js/ghimg.js` |
@@ -42,7 +45,7 @@ node tests/ghimg.test.js
 node tests/md.test.js
 ```
 
-数据、脚本或页面逻辑改动请运行相关检查；只改文档时，检查链接、示例和操作顺序即可。上述检查使用 Python 标准库和 Node 内置断言，不请求网络。数据投稿者还可以运行 `python scripts/data_editor.py data` 打开本地编辑器；它使用 Python 自带 Tkinter，不需要安装第三方包。编辑器会从 manifest 和各角色的 tags.json 自动发现结构，支持角色、分类的管理，以及标签维度的新增、重命名和中英文翻译修改；标签删除和值序号修改不在编辑器中提供。
+数据、脚本或页面逻辑改动请运行相关检查；只改文档时，检查链接、示例和操作顺序即可。上述项目检查使用 Python 标准库和 Node 内置断言，不请求网络。数据投稿者运行 `python scripts/data_editor.py data` 会启动只监听 `127.0.0.1` 的本地浏览器差异编辑器；`python scripts/data_editor.py --tk data` 保留旧 Tk 编辑器。浏览器工具调用本机 Git 和校验器，不执行 PR 分支代码。可选 AI 标注通过浏览器直连用户选择的官方 API，密钥不持久化；Google 视频上传完成识别后会尝试删除临时文件。AI 输出不得绕过人工复核与完整数据校验。
 
 ## 数据如何变成页面
 
@@ -146,7 +149,7 @@ https://raw.githubusercontent.com/<owner>/NaiLoong/<commit>/assets/memes/laugh.p
 | `generate-previews.yml`（Generate Meme Previews） | 合并到 `main` 的 PR | 为新增或替换的图片生成 WebP，写入主仓库 `preview` 分支。 |
 | `deploy.yml` | `main` 更新或手动运行 | 四条检查全部通过后发布 GitHub Pages。 |
 
-`validate_data.py` 只检查 URL 结构和数据中的重复 URL，不下载图片。图片下载、体积检查和内容去重由独立的哈希工作流执行。哈希工作流和预览图工作流使用主仓库脚本，不执行 PR 分支代码。`data_editor.py` 只使用 Python 标准库和 Tkinter，保存记录前会调用同一套 `validate_data()`。
+`validate_data.py` 只检查 URL 结构和数据中的重复 URL，不下载图片。图片下载、体积检查和内容去重由独立的哈希工作流执行。哈希工作流和预览图工作流使用主仓库脚本，不执行 PR 分支代码。`data_editor.py`、浏览器差异扫描和本地 HTTP 服务只使用 Python 标准库，写入前调用同一套 `validate_data()`，并在失败时恢复本次数据修改。
 
 `hash.txt` 每行保存一个已归档的 SHA-256。尚未归档的已入库哈希和待处理图片哈希保存在 Actions Cache；哈希成功写入 `hash.txt` 后会从 `ingested` 临时记录中清除，并移除已入库评论记录中冗余的哈希数组。缓存恢复或初始化失败时不会保存新缓存；业务步骤失败时仍保存已经完成的状态释放或入库变更，避免旧认领永久卡住。只有整项任务成功时才删除旧缓存；这些状态由工作流维护。
 

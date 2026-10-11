@@ -35,6 +35,8 @@
 
 - `index.html`：网站主页面骨架、导航和文案。
 - `docs.html`：站内文档阅读器页面，搭配 `assets/js/docs.js` 与 `assets/css/docs.css`；把 `docs/` 和 `CONTRIBUTING.md` 渲染成网页。
+- `contribute.html`：Git 新手交互式投稿教程；步骤、Git 分支动画和命令由 `assets/js/contribute.js` 驱动。
+- `tools/data-editor/`：本地浏览器差异编辑器页面；由 `python scripts/data_editor.py data` 在 loopback HTTP 服务中提供。
 - `assets/css/`：设计参考 `github-design-system-analysis.md`。
 - `assets/js/app.js`：加载 manifest 和数据，渲染页面、路由和交互。
 - `assets/js/search.js`：标签定义解析、搜索和筛选语义。
@@ -50,7 +52,10 @@
 - `.github/workflows/`：PR 测试/数据校验和 GitHub Pages 部署。
 - `scripts/validate_data.py`：数据契约、标签语义、图片 URL 格式和重复 URL 校验。
 - `scripts/meme_hash.py`：Issue 评论图片和 PR 图片的哈希缓存、状态联动及每日归档逻辑。
-- `scripts/data_editor.py`：从 manifest 和 tags.json 自动发现数据结构的本地 Tkinter 编辑器。
+- `scripts/data_editor.py`：默认启动浏览器差异编辑器；`--tk` 参数保留 Tkinter 结构管理编辑器。
+- `scripts/data_editor_core.py`：本地 image 分支 commit 扫描、数据差异和事务式写入。
+- `scripts/data_editor_server.py`：仅监听 127.0.0.1 的编辑器服务和本地 Git API。
+- `scripts/data_editor_ai.py`：可选的 OpenAI、Anthropic、Gemini 批量视觉标注；API key 只在进程内存中短暂使用。
 - `scripts/generate_previews.py`：合并 PR 后下载新增原图并生成预览 WebP。
 - `tests/`：数据校验器、标签解析、图片 URL 转换和 Markdown 渲染测试；Python 测试使用标准库，Node 测试使用内置断言，不引入第三方依赖。
 - `docs/`：按参与方式区分的贡献指南。
@@ -70,6 +75,8 @@
 - 哈希去重使用主分支 `hash.txt` 和 GitHub Actions Cache 中的已入库缓存、预占位缓存。缓存使用共同前缀加时间戳后缀；workflow concurrency 串行化读写，任务完成后保存新缓存并删除旧缓存，失败时保留旧缓存以便下次恢复。预占位代表仍有效的待处理图片，保留在缓存中继续顺延，不写入主分支；每日归档任务才批量追加已入库哈希到 `hash.txt`，写入成功后清理 `ingested` 临时记录。待处理评论换图或清空时回收旧占位；删除未认领评论时释放占位；已认领评论删除后保留占位并标记为已删除，直到对应 PR 合并或关闭；未合并关闭 PR 时保留仍存在的 Issue 投稿占位并解除认领，纯 PR 占位释放供重新检查。
 - 单张投稿图片严格小于或等于 5 MB；鼓励压到 2 MB 以下。数据校验器本身不下载 Fork 图片；`meme-hash.yml` 会在受信任的主仓库 workflow 中下载新增 PR 图片和 Issue 附件来执行 5 MB 检查。
 - 投稿认领优先使用 Issue 评论完整链接 `https://github.com/lin-alg/NaiLoong/issues/1#issuecomment-<id>`；一个 PR 可以包含多条链接，PR 图片必须覆盖所有被认领评论的全部图片。已存在的 `MEME-CLAIM-...` 口令仍需兼容。
+- 浏览器差异编辑器在 `meme/...` 工作分支启动，从本地 `refs/heads/image` 读取最近 N 个 commit；确认写入时验证 image SHA、工作分支和全部 data JSON 扫描快照仍一致。删除图默认只告警、不删数据；所有写入经过 `validate_data()`，失败必须恢复写入前数据。不要让 JSON 写入 image 分支。
+- 可选 AI 标注的模型输出始终是未信任建议，必须限制到现有角色/标签、供人工编辑并经过完整数据校验。API key 不得写入 localStorage、文件、URL、日志或错误信息。GIF 用本地 ffmpeg 转成 MP4；Gemini Files API 临时上传后尝试删除，OpenAI/Anthropic 使用由 MP4 抽取的帧图。
 - 数据编辑器允许新增、修改和删除角色与分类；标签管理仅允许重命名标签维度、修改该维度的中英文翻译和新增标签维度，不提供删除标签或修改标签值的操作。新增标签维度时，编辑器会为该角色所有分类中的已有条目补入 `null`；这些限制只属于编辑器界面，不在校验器层面做硬性约束。
 - 修改维度顺序或已有维度内标签序号时，同步核查并迁移受影响条目。数组标签从来不表示展平序号；不得重新引入展平解释。
 - 修改数据规则时同步更新校验器、测试、项目开发指南的数据规范和相关投稿指南。
@@ -90,6 +97,8 @@ python -m http.server 8080
 前五条是 PR CI 和部署前检查；最后一条用于浏览器预览，访问 `http://localhost:8080`。校验器和测试只使用 Python 标准库与 Node 内置断言，不请求网络。
 
 修改校验规则时增加有效和无效输入测试。修改标签解析时，测试本地序号、`null`、对象写法、筛选和展示；修改图片规则时测试 image 分支 commit URL 结构、RAW 错误分支、重复 URL 和 5 MB 限制，且不以真实网络可用性为测试条件。用户可见 UI 改动在本地预览。
+
+差异编辑器的 Git 生命周期测试运行 `python -m unittest tests.test_data_editor_core -v`；供应商 API 格式测试使用 mock，不发送网络请求。手工预览时，在投稿工作分支运行 `python scripts/data_editor.py data`。
 
 ## 工作流约定
 

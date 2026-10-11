@@ -8,7 +8,7 @@
 
 ## 学习 Git 并提交表情到网站
 
-如果你想入门 Github 的使用，请阅读[GitHub 新手投稿教程](docs/github-beginner-guide.md)。教程会带你把图片上传到自己的 Fork，并把表情记录提交到主仓库。
+如果你想入门 GitHub 的使用，先打开[交互式 Git 投稿教程](contribute.html)。它会逐步带你 Fork、提交图片、自动扫描 image 差异并创建 PR；完整步骤见[文字指南](docs/github-beginner-guide.md)。
 
 ## 改进网站或项目
 

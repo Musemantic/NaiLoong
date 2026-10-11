@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>差异编辑器 · 奶-hub</title>
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/editor.css">
+</head>
+<body class="editor-page">
+  <a class="skip-link" href="#main">跳到主内容</a>
+  <header class="site-header editor-header">
+    <div class="container editor-header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">🍼</span>
+        <span class="brand-name">奶-hub</span>
+        <span class="brand-sub">差异编辑器</span>
+      </a>
+      <div class="editor-header-actions">
+        <span class="local-only"><span class="local-dot"></span>仅本机</span>
+        <a class="btn btn-ghost btn-sm" href="/contribute.html">Git 投稿教程</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="container editor-main" tabindex="-1">
+    <section class="editor-intro">
+      <div>
+        <p class="eyebrow">IMAGE BRANCH REVIEW</p>
+        <h1>把图片变成可审核的改动</h1>
+        <p class="editor-lead">扫描已推送的图片 commit，确认变更、补齐条目，再一次写入并校验数据。</p>
+      </div>
+      <div class="branch-readout" aria-live="polite">
+        <span class="branch-mark" aria-hidden="true">⑂</span>
+        <div><strong id="branchName">等待连接</strong><small id="headSha">启动本地编辑器以连接仓库</small></div>
+      </div>
+    </section>
+
+    <section class="git-flow" aria-label="Git 投稿进度">
+      <div class="flow-track" aria-hidden="true"><span id="flowProgress"></span></div>
+      <ol>
+        <li class="flow-done"><span>1</span><b>image 分支</b><small>图片与 commit 已推送</small></li>
+        <li class="flow-active"><span>2</span><b>扫描差异</b><small>自动识别文件变化</small></li>
+        <li><span>3</span><b>整理条目</b><small>角色、标题和标签</small></li>
+        <li><span>4</span><b>校验写入</b><small>生成 JSON 改动</small></li>
+      </ol>
+    </section>
+
+    <section class="scan-panel" aria-labelledby="scanTitle">
+      <div class="scan-heading">
+        <div><p class="eyebrow">01 / SCAN</p><h2 id="scanTitle">选择要检查的 commit</h2></div>
+        <p class="scan-note">建议每次图片上传只做一个 commit。多次提交也可以扫描最近 N 个。</p>
+      </div>
+      <div class="scan-controls">
+        <label class="number-control" for="commitCount"><span>最近</span><input id="commitCount" type="number" min="1" max="100" value="1"><span>个 commit</span></label>
+        <button class="btn btn-primary" id="scanButton" type="button">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 2.5a4.5 4.5 0 1 0 2.9 7.94L13 13.5M7 4.5v3m-1.5-1.5h3"/></svg>
+          扫描 image 分支
+        </button>
+        <span class="scan-status" id="scanStatus" role="status" aria-live="polite">正在读取本地仓库…</span>
+      </div>
+      <div class="scan-error" id="scanError" role="alert" hidden></div>
+    </section>
+
+    <section class="review-workspace" id="reviewWorkspace" hidden>
+      <div class="review-toolbar">
+        <div class="change-summary" aria-label="变更摘要">
+          <span><b id="countAdded">0</b> 新增</span>
+          <span><b id="countUpdated">0</b> 更新</span>
+          <span><b id="countDeleted">0</b> 删除</span>
+        </div>
+        <div class="review-actions">
+          <label class="filter-control" for="changeFilter">查看
+            <select id="changeFilter">
+              <option value="all">全部变更</option>
+              <option value="added">新增</option>
+              <option value="updated">更新 / 重命名</option>
+              <option value="deleted">删除提醒</option>
+            </select>
+          </label>
+          <button class="btn btn-secondary" id="selectAllButton" type="button">全选可写入项</button>
+        </div>
+      </div>
+
+      <details class="ai-panel" id="aiPanel">
+        <summary>
+          <span class="ai-mark" aria-hidden="true">✳</span>
+          <span><strong>批量 AI 标注</strong><small>生成标题、角色与标签建议，结果仍可逐项修改</small></span>
+          <span class="summary-chevron" aria-hidden="true">⌄</span>
+        </summary>
+        <div class="ai-settings">
+          <label>服务商<select id="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option></select></label>
+          <label>模型<input id="modelName" type="text" value="gpt-6-astra" autocomplete="off"></label>
+          <label class="api-key-field">API 密钥<input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="仅此次请求使用，不会保存"></label>
+          <label>每批条目<input id="batchSize" type="number" min="1" max="12" value="4"></label>
+          <label>请求间隔（秒）<input id="requestInterval" type="number" min="0" max="60" step="0.5" value="1"></label>
+          <label>失败重试<input id="retryCount" type="number" min="0" max="5" value="2"></label>
+          <button class="btn btn-primary ai-run" id="annotateButton" type="button">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m8 1 .9 4.1L13 4l-2.2 3.5L15 9l-4.3.5L12 14l-3.5-2.2L6 15l-.4-4.3L1 12l2.2-3.5L0 6l4.3-.4L3 1l3.5 2.2z"/></svg>
+            开始批量标注
+          </button>
+          <p class="ai-privacy">所选图片与角色参考 PNG 会发送给所选服务商。密钥只在本机内存和本次请求中使用；不会保存或记录。请检查并修改 AI 建议后再写入。</p>
+          <p class="ai-status" id="aiStatus" role="status" aria-live="polite"></p>
+        </div>
+      </details>
+
+      <div class="change-groups" id="changeGroups"></div>
+      <div class="apply-bar">
+        <p id="applySummary">扫描后可在此查看差异。</p>
+        <button class="btn btn-primary" id="applyButton" type="button" disabled>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.3 6.2 11.5 13 4.5M2 14h12"/></svg>
+          确认并写入数据
+        </button>
+      </div>
+    </section>
+
+    <section class="empty-review" id="emptyReview" hidden>
+      <span class="empty-check" aria-hidden="true">✓</span>
+      <h2>这段历史没有图片文件变化</h2>
+      <p>可以检查 commit 数量，或确认图片已经提交并推送到 `image` 分支。</p>
+    </section>
+    <section class="apply-success" id="applySuccess" hidden>
+      <span class="success-icon" aria-hidden="true">✓</span>
+      <div><p class="eyebrow">DATA VALIDATED</p><h2>差异已写入并通过检查</h2><p id="writtenFiles"></p></div>
+      <div class="success-next"><strong>下一步：提交 JSON 改动</strong><code>git status<br>git add data/&lt;角色&gt;/&lt;分类&gt;.json<br>git diff --staged<br>git commit -m "feat: 添加表情记录"</code></div>
+    </section>
+    <p class="editor-footer-note"><a href="/contribute.html">返回 Git 新手教程</a><span>写入前会运行完整数据校验；失败时自动恢复本次写入。</span></p>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="/assets/js/editor.js"></script>
+</body>
+</html>

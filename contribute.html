@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Git 新手投稿 · 奶-hub</title>
+  <meta name="description" content="跟随奶-hub 的交互式 Git 投稿教程，完成 Fork、图片分支、差异审核和 Pull Request。">
+  <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/contribute.css">
+</head>
+<body class="contribute-page">
+  <a class="skip-link" href="#main">跳到主内容</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">🍼</span><span class="brand-name">奶-hub</span><span class="brand-sub">Git 投稿</span></a>
+      <div class="header-actions">
+        <a class="btn btn-ghost" href="index.html#gallery">← 返回表情库</a>
+        <a class="btn btn-primary" href="docs.html#/github-beginner-guide">完整文字教程</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="contribute-intro">
+      <div class="container intro-inner">
+        <div class="intro-copy">
+          <p class="eyebrow">你的第一次 PULL REQUEST</p>
+          <h1>奶-hub Git 投稿</h1>
+          <p>上传图片到自己的 image 分支，再用差异编辑器整理表情条目，最后提交一个清晰的 Pull Request。</p>
+          <a class="btn btn-primary" href="#lesson">开始第 1 步 <span aria-hidden="true">↓</span></a>
+        </div>
+        <figure class="intro-meme">
+          <img src="assets/placeholders/naiwa_laugh.gif" alt="奶蛙狂笑表情" width="320" height="240">
+          <figcaption>贡献表情，从 Fork 开始</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="lesson container" id="lesson" aria-labelledby="lessonTitle">
+      <div class="lesson-topline">
+        <div><p class="eyebrow" id="stepCounter">STEP 1 OF 6</p><h2 id="lessonTitle" tabindex="-1">准备 Fork 和本地仓库</h2></div>
+        <span class="time-estimate" id="stepTime">约 5 分钟</span>
+      </div>
+      <div class="lesson-progress" role="progressbar" aria-label="教程进度" aria-valuemin="1" aria-valuemax="6" aria-valuenow="1"><span id="lessonProgress"></span></div>
+
+      <div class="lesson-layout">
+        <aside class="lesson-rail" aria-label="教程步骤">
+          <ol id="stepNav"></ol>
+          <div class="git-visual" aria-label="当前教程步骤在 Git 分支中的位置">
+            <div class="git-visual-heading"><span>分支路线</span><span class="git-legend"><i></i> main <i></i> image <i></i> 投稿</span></div>
+            <svg viewBox="0 0 300 150" role="img" aria-labelledby="gitDiagramTitle">
+              <title id="gitDiagramTitle">main、image 和投稿分支示意图</title>
+              <path class="branch-line main-line" d="M26 38H274"/>
+              <path class="branch-line image-line" d="M80 38v42h194"/>
+              <path class="branch-line work-line" d="M130 38v80h144"/>
+              <g class="commit-node node-main"><circle cx="38" cy="38" r="6"/><circle cx="94" cy="38" r="6"/><circle cx="150" cy="38" r="6"/><circle cx="218" cy="38" r="6"/><circle cx="274" cy="38" r="6"/></g>
+              <g class="commit-node node-image"><circle cx="80" cy="80" r="6"/><circle cx="148" cy="80" r="6"/><circle cx="216" cy="80" r="6"/><circle cx="274" cy="80" r="6"/></g>
+              <g class="commit-node node-work"><circle cx="130" cy="118" r="6"/><circle cx="196" cy="118" r="6"/><circle cx="274" cy="118" r="6"/></g>
+              <text x="18" y="20">main</text><text x="18" y="84">image</text><text x="18" y="123">meme/投稿</text>
+              <circle class="active-pulse" cx="150" cy="38" r="11"/>
+            </svg>
+          </div>
+        </aside>
+
+        <article class="lesson-content">
+          <p class="step-description" id="stepDescription"></p>
+          <div class="step-actions" id="stepActions"></div>
+          <div class="terminal" id="terminalBlock" hidden>
+            <div class="terminal-head"><span><i></i><i></i><i></i> Git Bash</span><button class="copy-command" id="copyCommand" type="button" aria-label="复制命令" title="复制命令">复制</button></div>
+            <pre><code id="commandText"></code></pre>
+            <p id="commandHint"></p>
+          </div>
+          <div class="lesson-extra" id="lessonExtra"></div>
+          <div class="lesson-controls">
+            <button class="btn btn-secondary" id="previousStep" type="button">← 上一步</button>
+            <button class="btn btn-primary" id="nextStep" type="button">下一步 →</button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="finish-band">
+      <div class="container finish-inner">
+        <div><p class="eyebrow">READY FOR REVIEW</p><h2>图片已整理，准备提交 PR</h2><p>提交前检查 JSON 差异，并把评论投稿的完整链接放进 PR 描述。</p></div>
+        <div class="finish-actions"><a class="btn btn-primary" href="docs.html#/github-beginner-guide/5-检查并提交-pr">查看 PR 细节</a><a class="btn btn-secondary" href="index.html#contribute">其它贡献方式</a></div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer"><div class="container footer-inner"><p>🍼🐲 <strong>奶-hub</strong></p><p class="footer-links"><a class="link" href="docs.html#/github-beginner-guide">完整 Git 指南</a><a class="link" href="index.html">表情库</a></p></div></footer>
+  <div class="toast" id="copyToast" role="status" aria-live="polite" hidden>命令已复制</div>
+  <script src="assets/js/contribute.js"></script>
+</body>
+</html>

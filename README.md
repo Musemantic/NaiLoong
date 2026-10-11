@@ -12,7 +12,7 @@
 ## 快速开始
 
 - **只分享表情：** 在[投稿区](https://github.com/lin-alg/NaiLoong/issues/1)的评论中上传图片。
-- **想入门 GitHub 并合并表情到网站：** 阅读[GitHub 新手投稿教程](docs/github-beginner-guide.md)。
+- **想入门 GitHub 且合并表情修改到网站：** 从[交互式 Git 投稿教程](contribute.html)开始，或查看[完整文字指南](docs/github-beginner-guide.md)。
 - **想改进项目：** 阅读[项目结构与开发指南](docs/project-maintainers-guide.md)。
 - **贡献入口：** 查看[贡献指南](CONTRIBUTING.md)。
 
@@ -33,6 +33,8 @@ NaiLoong/
 │   ├── css/                         # 页面样式
 │   ├── js/                          # 页面逻辑
 │   └── placeholders/                # 占位图片
+├── contribute.html                  # 交互式 Git 投稿教程
+├── tools/data-editor/               # 本地表情数据编辑器
 ├── data/
 │   ├── manifest.json                # 角色和分类目录
 │   ├── tag-translations.json        # 标签名的翻译文件
