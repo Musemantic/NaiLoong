@@ -10,5 +10,9 @@
   "artistic merit": {
     "en": "Artistic merit",
     "zh": "艺术价值"
+  },
+  "education": {
+    "en": "Education level",
+    "zh": "学历"
   }
 }

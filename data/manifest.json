@@ -5,8 +5,16 @@
     "icon": "tabler:baby-bottle lucide-lab:frog-face",
     "desc": "奶龙长大了，于是有了奶蛙。咳哈哈哈哈~",
     "subcategories": [
-      { "id": "animated", "name": "动图", "file": "naiwa/animated.json" },
-      { "id": "static", "name": "静态图", "file": "naiwa/static.json" }
+      {
+        "id": "animated",
+        "name": "动图",
+        "file": "naiwa/animated.json"
+      },
+      {
+        "id": "static",
+        "name": "静态图",
+        "file": "naiwa/static.json"
+      }
     ],
     "voice": "naiwa/voice.json"
   },
@@ -16,9 +24,41 @@
     "icon": "tabler:baby-bottle lucide:egg-fried",
     "desc": "奶鸡下的蛋，能量巨大。安~迪~",
     "subcategories": [
-      { "id": "animated", "name": "动图", "file": "naidan/animated.json" },
-      { "id": "static", "name": "静态图", "file": "naidan/static.json" }
+      {
+        "id": "animated",
+        "name": "动图",
+        "file": "naidan/animated.json"
+      },
+      {
+        "id": "static",
+        "name": "静态图",
+        "file": "naidan/static.json"
+      }
     ],
     "voice": "naidan/voice.json"
+  },
+  {
+    "id": "nai-emblem",
+    "name": "奶校徽",
+    "subcategories": [
+      {
+        "id": "static",
+        "name": "静态图",
+        "file": "nai-emblem/static.json"
+      }
+    ],
+    "desc": "你的学校有奶蛙形象吗？"
+  },
+  {
+    "id": "others",
+    "name": "其他奶科生物",
+    "subcategories": [
+      {
+        "id": "static",
+        "name": "静态图",
+        "file": "others/static.json"
+      }
+    ],
+    "desc": "多姿多彩的奶科生物"
   }
 ]
