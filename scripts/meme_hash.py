@@ -580,18 +580,39 @@ def hash_fork_urls(urls):
     return hashes
 
 
-def canonical_urls_from_entries(entries):
+def canonical_urls_from_entries(entries, source="PR image URL"):
     urls = []
-    for entry in entries:
+    for index, entry in enumerate(entries):
         value = entry.get("url")
         errors = []
-        canonical = _validate_url(value, "PR image URL", ROOT, errors)
+        canonical = _validate_url(value, f"{source} entry #{index}", ROOT, errors)
         if errors:
             raise BotError(errors[0])
         if canonical.startswith("assets/placeholders/"):
             continue
         urls.append(canonical)
     return urls
+
+
+def category_data_files(github: GitHub, repository, ref):
+    """Discover meme arrays from the manifest at a fixed repository commit."""
+    manifest = github.pr_file_json(repository, "data/manifest.json", ref)
+    if not manifest:
+        raise BotError(f"data/manifest.json at {ref}: expected a non-empty role array")
+    result = set()
+    for role in manifest:
+        categories = role.get("subcategories")
+        if not isinstance(categories, list) or not categories:
+            raise BotError(f"data/manifest.json at {ref}: expected non-empty subcategories")
+        for category in categories:
+            relative = category.get("file") if isinstance(category, dict) else None
+            if not isinstance(relative, str) or not relative.strip():
+                raise BotError(f"data/manifest.json at {ref}: category file must be a non-empty string")
+            path = PurePosixPath(relative)
+            if path.is_absolute() or ".." in path.parts or "\\" in relative or path.suffix != ".json":
+                raise BotError(f"data/manifest.json at {ref}: invalid category file {relative!r}")
+            result.add(PurePosixPath("data", path).as_posix())
+    return result
 
 
 def new_data_urls(github: GitHub, pull_request):
@@ -605,23 +626,25 @@ def new_data_urls(github: GitHub, pull_request):
     if not head_sha:
         raise BotError("The PR head commit SHA is unavailable")
     files = github.get_pr_files(number, expected_head_sha=head_sha)
+    if not any(item.get("filename", "").startswith("data/") and
+               item.get("filename", "").endswith(".json") for item in files):
+        return []
+    base_categories = category_data_files(github, REPOSITORY, base["sha"])
+    head_categories = category_data_files(github, head_repo, head_sha)
     additions = []
     for item in files:
         filename = item.get("filename", "")
-        if not filename.startswith("data/") or not filename.endswith(".json"):
-            continue
-        if PurePosixPath(filename).name in {"manifest.json", "tags.json", "tag-translations.json"}:
-            continue
         base_filename = item.get("previous_filename", filename)
-        base_entries = github.pr_file_json(
-            REPOSITORY, base_filename, base["sha"], allow_missing=item.get("status") == "added"
-        )
-        if item.get("status") == "removed":
-            head_entries = []
-        else:
+        if base_filename not in base_categories and filename not in head_categories:
+            continue
+        base_entries = []
+        head_entries = []
+        if base_filename in base_categories and item.get("status") != "added":
+            base_entries = github.pr_file_json(REPOSITORY, base_filename, base["sha"])
+        if filename in head_categories and item.get("status") != "removed":
             head_entries = github.pr_file_json(head_repo, filename, head_sha)
-        old_urls = canonical_urls_from_entries(base_entries)
-        new_urls_in_head = canonical_urls_from_entries(head_entries)
+        old_urls = canonical_urls_from_entries(base_entries, base_filename)
+        new_urls_in_head = canonical_urls_from_entries(head_entries, filename)
         additions.extend(added_canonical_urls(old_urls, new_urls_in_head))
     return additions
 
