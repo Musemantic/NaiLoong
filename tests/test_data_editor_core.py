@@ -12,7 +12,7 @@ from urllib.request import Request, urlopen
 from scripts import data_editor_ai
 from scripts.data_editor_core import MAX_IMAGE_BYTES, EditorError, apply_changes, repository_owner, scan_image_branch, with_baseline
 from scripts.data_editor_ai import (
-    DEFAULT_MODELS, _parse_response, _request, _run_ffmpeg,
+    DEFAULT_MODELS, FRAME_SIGNATURE_BYTES, _distinct_frame_indices, _parse_response, _request, _run_ffmpeg,
     _schema, _upload_google_video, annotate,
 )
 from scripts.data_editor_server import create_handler
@@ -128,6 +128,7 @@ class DataEditorCoreTests(unittest.TestCase):
             self.assertEqual(len(scan["changes"]), 4)
             rename = next(item for item in scan["changes"] if item["kind"] == "updated" and item["change_reason"] == "重命名")
             self.assertEqual(rename["old_record"]["entry"]["title"], "旧标题")
+            self.assertIn(f"ref={upload_sha}", rename["old_preview"])
             self.assertIn("assets/memes/new.gif", rename["url"])
             replace = next(item for item in scan["changes"] if item["kind"] == "updated" and item["path"].endswith("replace.gif"))
             self.assertEqual(replace["change_reason"], "图片内容更新")
@@ -256,6 +257,8 @@ class DataEditorAITests(unittest.TestCase):
             _parse_response("not json")
         with self.assertRaises(EditorError):
             _parse_response("{}")
+        with self.assertRaises(EditorError):
+            _parse_response("```")
 
     def test_annotate_rejects_invalid_provider_and_settings_before_network(self):
         with self.assertRaises(EditorError):
@@ -306,27 +309,63 @@ class DataEditorAITests(unittest.TestCase):
                     self.assertNotIn("test-secret", request.full_url)
                     self.assertEqual(request.get_header("X-goog-api-key"), "test-secret")
                     self.assertEqual(body["contents"][0]["parts"][2]["inlineData"]["mimeType"], "image/png")
-                    self.assertEqual(body["generationConfig"]["responseFormat"]["text"]["mimeType"], "APPLICATION_JSON")
-                    self.assertEqual(body["generationConfig"]["responseFormat"]["text"]["schema"]["type"], "object")
+                    self.assertEqual(body["generationConfig"]["responseMimeType"], "application/json")
+                    self.assertEqual(body["generationConfig"]["responseJsonSchema"]["type"], "object")
 
-    def test_gif_conversion_builds_mp4_and_contact_sheet_without_dependencies(self):
+    def test_frame_selection_removes_noise_and_loops_but_keeps_local_changes(self):
+        still = bytes([80]) * FRAME_SIGNATURE_BYTES
+        noise = bytes([82]) * FRAME_SIGNATURE_BYTES
+        local_change = bytes([160]) * 120 + still[120:]
+        other_scene = bytes([200]) * FRAME_SIGNATURE_BYTES
+        self.assertEqual(_distinct_frame_indices([still, noise, local_change, still, other_scene, local_change]), [0, 2, 4])
+        self.assertEqual(_distinct_frame_indices([still] * 100), [0])
+        with self.assertRaisesRegex(EditorError, "不完整"):
+            _distinct_frame_indices([b"short frame"])
+
+    def test_frame_limit_covers_first_and_last_distinct_scenes(self):
+        frames = [bytes([index * 10]) * FRAME_SIGNATURE_BYTES for index in range(24)]
+        selected = _distinct_frame_indices(frames)
+        self.assertEqual(len(selected), 12)
+        self.assertEqual(selected[0], 0)
+        self.assertEqual(selected[-1], 23)
+        self.assertEqual(selected, sorted(set(selected)))
+
+    def test_gif_conversion_keeps_full_clip_and_extracts_only_distinct_frames(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             source = directory / "sample.gif"
             source.write_bytes(b"gif")
 
             def run(command, **_kwargs):
-                Path(command[-1]).write_bytes(b"mp4" if command[-1].endswith(".mp4") else b"jpeg-sheet")
+                if command[-1].endswith(".mp4"):
+                    Path(command[-1]).write_bytes(b"mp4")
+                elif command[-1] == "pipe:1":
+                    return subprocess.CompletedProcess(command, 0, bytes([80]) * FRAME_SIGNATURE_BYTES * 3 + bytes([200]) * FRAME_SIGNATURE_BYTES, b"")
+                elif command[-1].endswith(".jpg"):
+                    for index in (1, 2):
+                        Path(command[-1].replace("%03d", f"{index:03d}")).write_bytes(f"jpeg-{index}".encode())
+                return subprocess.CompletedProcess(command, 0, b"", b"Duration: 00:00:12.00")
 
             with patch.object(data_editor_ai.subprocess, "run", side_effect=run) as mocked:
                 video, frames = _run_ffmpeg(source, directory)
             self.assertEqual(video, b"mp4")
-            self.assertEqual(frames, [b"jpeg-sheet"])
-            command = mocked.call_args_list[1].args[0]
-            self.assertEqual(
-                command[command.index("-vf") + 1],
-                "fps=1,scale=256:-2,tile=4x2:padding=4:margin=4:color=white",
-            )
+            self.assertEqual(frames, [(0, b"jpeg-1"), (.375, b"jpeg-2")])
+            conversion = mocked.call_args_list[0].args[0]
+            self.assertNotIn("-t", conversion)
+            extraction = mocked.call_args_list[-1].args[0]
+            self.assertIn("eq(n\\,0)+eq(n\\,3)", extraction[extraction.index("-vf") + 1])
+
+    def test_google_video_conversion_skips_unused_frame_extraction(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            source = directory / "sample.gif"
+            source.write_bytes(b"gif")
+            def run(command, **_kwargs):
+                Path(command[-1]).write_bytes(b"mp4")
+            with patch.object(data_editor_ai.subprocess, "run", side_effect=run) as mocked:
+                video, frames = _run_ffmpeg(source, directory, extract_frames=False)
+            self.assertEqual((video, frames), (b"mp4", []))
+            self.assertEqual(mocked.call_count, 1)
 
     def test_gemini_video_upload_uses_files_resumable_headers_and_mime(self):
         class Response:
@@ -393,6 +432,35 @@ class DataEditorAITests(unittest.TestCase):
         self.assertTrue(all(item["tags"] == [0] for item in result["suggestions"]))
         self.assertEqual([call.args[0] for call in sleep.call_args_list], [1, 0.5])
 
+    def test_untrusted_suggestions_are_sanitized_and_missing_results_are_reported(self):
+        role = {"id": "naiwa", "name": "奶蛙", "tags": {
+            "mood": {"0": "平静", "1": "开心"}, "rating": {"0": "普通"}, "extra": {"0": "零"},
+        }, "examples": []}
+        scan = {"changes": [{"id": str(index), "path": f"{index}.png", "kind": "added", "media_type": "static"}
+                            for index in range(2)], "metadata": {"roles": [role]}}
+        response = json.dumps({"items": [
+            {"path": [], "role_id": "naiwa"},
+            {"path": "0.png", "title": None, "role_id": "naiwa", "tags": [
+                {"dimension": "mood", "value": True}, {"dimension": "rating", "value": "0"},
+                {"dimension": "extra", "value": 0}, {"dimension": [], "value": 0},
+            ]},
+            {"path": "0.png", "title": "duplicate", "role_id": "naiwa", "tags": []},
+        ]})
+        with patch.object(data_editor_ai, "_media_parts", return_value=[]), \
+                patch.object(data_editor_ai, "_role_reference", return_value=None), \
+                patch.object(data_editor_ai, "_request", return_value=response):
+            result = annotate(Path("."), scan, ["0", "1"], "openai", " key ", "model", retries=0)
+        self.assertEqual(len(result["suggestions"]), 1)
+        self.assertEqual(result["suggestions"][0]["tags"], [None, None, 0])
+        self.assertEqual(result["suggestions"][0]["title"], "")
+        self.assertEqual(result["errors"][0]["paths"], ["1.png"])
+
+        with patch.object(data_editor_ai, "_media_parts", return_value=[]), \
+                patch.object(data_editor_ai, "_role_reference", return_value=None), \
+                patch.object(data_editor_ai, "_request", side_effect=EditorError("failed with test-secret")):
+            result = annotate(Path("."), scan, ["0"], "openai", " test-secret ", "model", retries=0)
+        self.assertNotIn("test-secret", result["errors"][0]["error"])
+
 
 class DataEditorServerTests(unittest.TestCase):
     def test_local_browser_service_serves_tool_and_rejects_cross_origin_posts(self):
@@ -412,6 +480,10 @@ class DataEditorServerTests(unittest.TestCase):
             self.assertEqual({role["id"] for role in project["roles"]}, {"naiwa", "naidan"})
             with urlopen(base + "/assets/js/editor.js") as response:
                 self.assertIn("确认并写入数据", response.read().decode("utf-8"))
+            with urlopen(base + "/assets/css/docs.css") as response:
+                self.assertEqual(response.status, 200)
+            with urlopen(base + "/contribute.html") as response:
+                self.assertIn("gitDiagramContent", response.read().decode("utf-8"))
 
             request = Request(
                 base + "/api/apply", data=b"{}", method="POST",

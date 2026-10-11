@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import json
+import math
+import re
 import subprocess
 import tempfile
 import time
@@ -25,36 +27,93 @@ DEFAULT_MODELS = {
 }
 MAX_REQUEST_BYTES = 14 * 1024 * 1024
 MAX_MEDIA_BYTES = 5 * 1024 * 1024
+MAX_FRAME_CANDIDATES = 160
+MAX_UPLOAD_FRAMES = 12
+FRAME_SIGNATURE_BYTES = 32 * 32 * 3
 
 
 def _b64(content: bytes) -> str:
     return base64.b64encode(content).decode("ascii")
 
 
-def _run_ffmpeg(source: Path, directory: Path) -> tuple[bytes, list[bytes]]:
-    executable = "ffmpeg"
+def _distinct_frame_indices(signatures: list[bytes], limit: int = MAX_UPLOAD_FRAMES) -> list[int]:
+    """Drop near-identical scenes, including frames from repeated animation loops.
+
+    Compare small RGB images, not compressed JPEG bytes. A low average error
+    and few substantially changed channels tolerate compression noise while
+    retaining local changes such as a mouth opening or a caption changing.
+    """
+    unique = []
+    for index, signature in enumerate(signatures):
+        if len(signature) != FRAME_SIGNATURE_BYTES:
+            raise EditorError("视频抽帧返回了不完整的画面。")
+        duplicate = False
+        for previous in unique:
+            differences = [abs(left - right) for left, right in zip(signature, signatures[previous])]
+            if sum(differences) / len(differences) <= 4 and sum(value > 20 for value in differences) / len(differences) <= .01:
+                duplicate = True
+                break
+        if not duplicate:
+            unique.append(index)
+    if len(unique) <= limit:
+        return unique
+    # Keep first/last distinct scenes and cover the entire clip, never just its
+    # first few seconds. The original timestamps accompany the uploaded frames.
+    return [unique[round(index * (len(unique) - 1) / (limit - 1))] for index in range(limit)]
+
+
+def _run_ffmpeg(source: Path, directory: Path, extract_frames: bool = True) -> tuple[bytes, list[tuple[float, bytes]]]:
     mp4 = directory / "clip.mp4"
-    sheet = directory / "frames.jpg"
     try:
         subprocess.run(
-            [executable, "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
-             "-vf", "fps=1,scale=768:-2", "-t", "8", "-an", "-movflags", "+faststart", str(mp4)],
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
+             "-vf", "scale='min(768,iw)':'min(768,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1",
+             "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(mp4)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=90,
         )
+        if not extract_frames:
+            return mp4.read_bytes(), []
+        metadata = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-i", str(mp4)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=15,
+        )
+        duration_match = re.search(rb"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", metadata.stderr)
+        if not duration_match:
+            raise EditorError("无法读取视频时长，请检查 ffmpeg 转换结果。")
+        hours, minutes, seconds = (float(value) for value in duration_match.groups())
+        duration = hours * 3600 + minutes * 60 + seconds
+        if not math.isfinite(duration) or duration <= 0:
+            raise EditorError("视频时长无效，无法抽帧。")
+        fps = min(8, MAX_FRAME_CANDIDATES / duration)
+        decoded = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(mp4),
+             "-vf", f"fps={fps:.8f}:round=up,scale=32:32", "-frames:v", str(MAX_FRAME_CANDIDATES),
+             "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=90,
+        )
+        raw = decoded.stdout
+        if not raw or len(raw) % FRAME_SIGNATURE_BYTES:
+            raise EditorError("无法从视频抽取完整画面。")
+        signatures = [raw[offset:offset + FRAME_SIGNATURE_BYTES] for offset in range(0, len(raw), FRAME_SIGNATURE_BYTES)]
+        selected = _distinct_frame_indices(signatures)
+        # Extract only the chosen frames at readable resolution in one pass.
+        selection = "+".join(f"eq(n\\,{index})" for index in selected)
         subprocess.run(
-            [executable, "-hide_banner", "-loglevel", "error", "-y", "-i", str(mp4),
-             "-vf", "fps=1,scale=256:-2,tile=4x2:padding=4:margin=4:color=white",
-             "-frames:v", "1", str(sheet)],
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(mp4),
+             "-vf", f"fps={fps:.8f}:round=up,select='{selection}'",
+             "-vsync", "vfr", "-q:v", "3", "-frames:v", str(len(selected)), str(directory / "frame-%03d.jpg")],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=90,
         )
+        frames = [(index / fps, (directory / f"frame-{ordinal:03d}.jpg").read_bytes())
+                  for ordinal, index in enumerate(selected, 1)]
     except FileNotFoundError as exc:
-        raise EditorError("GIF 视频识别需要安装 ffmpeg，并确保 ffmpeg 在 PATH 中。") from exc
+        raise EditorError("动画识别需要安装 ffmpeg，并确保 ffmpeg 在 PATH 中。") from exc
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         detail = getattr(exc, "stderr", b"")
         if isinstance(detail, bytes):
             detail = detail.decode("utf-8", "replace").strip()
-        raise EditorError("GIF 转换失败：" + (detail or "ffmpeg 执行失败")) from exc
-    return mp4.read_bytes(), [sheet.read_bytes()]
+        raise EditorError("动画转换或抽帧失败：" + (detail or "ffmpeg 执行失败")) from exc
+    return mp4.read_bytes(), frames
 
 
 def _media_parts(root: Path, scan: dict, item: dict, provider: str) -> list[tuple[str, str, bytes]]:
@@ -70,12 +129,12 @@ def _media_parts(root: Path, scan: dict, item: dict, provider: str) -> list[tupl
             directory = Path(temporary)
             source = directory / ("source" + extension)
             source.write_bytes(content)
-            mp4, frames = _run_ffmpeg(source, directory)
+            mp4, frames = _run_ffmpeg(source, directory, extract_frames=provider != "google")
         if provider == "google":
             return [("video/mp4", path, mp4)]
         if not frames:
             raise EditorError(f"无法从动画中抽取画面：{path}")
-        return [("image/jpeg", f"{path} 帧 {index + 1}", frame) for index, frame in enumerate(frames)]
+        return [("image/jpeg", f"{path} · {timestamp:.2f}s", frame) for timestamp, frame in frames]
     mime = {
         ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
         ".webp": "image/webp",
@@ -219,9 +278,7 @@ def _request(provider: str, api_key: str, model: str, prompt: str,
             else:
                 parts.append({"inlineData": {"mimeType": mime, "data": _b64(data)}})
         body = {"contents": [{"role": "user", "parts": parts}],
-                "generationConfig": {"responseFormat": {
-                    "text": {"mimeType": "APPLICATION_JSON", "schema": schema},
-                }}}
+                "generationConfig": {"responseMimeType": "application/json", "responseJsonSchema": schema}}
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{quote(model, safe='')}:generateContent"
         headers = {"x-goog-api-key": api_key}
     else:
@@ -248,8 +305,8 @@ def _request(provider: str, api_key: str, model: str, prompt: str,
     elif provider == "anthropic":
         text = "\n".join(block.get("text", "") for block in payload.get("content", []) if block.get("type") == "text")
     else:
-        text = "\n".join(part.get("text", "") for candidate in payload.get("candidates", [])
-                         for part in candidate.get("content", {}).get("parts", []))
+        text = "\n".join(part.get("text", "") for candidate in payload.get("candidates", [])[:1]
+                         for part in candidate.get("content", {}).get("parts", []) if not part.get("thought"))
     if not text:
         raise EditorError("AI 服务没有返回可读取的 JSON 文本。")
     return text
@@ -336,7 +393,7 @@ def _delete_google_file(api_key: str, name: str) -> None:
 def _parse_response(text: str) -> dict:
     text = text.strip()
     if text.startswith("```"):
-        text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        text = text.partition("\n")[2].rsplit("```", 1)[0].strip()
     try:
         result = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -352,6 +409,7 @@ def annotate(root: Path, scan: dict, item_ids: list[str], provider: str, api_key
         raise EditorError("请选择 OpenAI、Anthropic 或 Google。")
     if not api_key.strip() or not model.strip():
         raise EditorError("API 密钥和模型名称不能为空。")
+    api_key = api_key.strip()
     if not 1 <= batch_size <= 12 or not 0 <= interval <= 60 or not 0 <= retries <= 5:
         raise EditorError("批量数量、请求间隔或重试次数超出范围。")
     selected = {str(value) for value in item_ids}
@@ -377,9 +435,13 @@ def annotate(root: Path, scan: dict, item_ids: list[str], provider: str, api_key
                         raise exc
                     time.sleep(min(2 ** attempt, 8))
             expected_paths = {item["path"] for item in batch}
+            received_paths = set()
             for suggestion in parsed["items"]:
-                if not isinstance(suggestion, dict) or suggestion.get("path") not in expected_paths:
+                if not isinstance(suggestion, dict) or not isinstance(suggestion.get("path"), str):
                     continue
+                if suggestion["path"] not in expected_paths or suggestion["path"] in received_paths:
+                    continue
+                received_paths.add(suggestion["path"])
                 role_id = suggestion.get("role_id")
                 role = next((value for value in roles if value["id"] == role_id), None)
                 if role is None:
@@ -390,16 +452,18 @@ def annotate(root: Path, scan: dict, item_ids: list[str], provider: str, api_key
                     by_dimension = {}
                     if isinstance(tag_values, list):
                         by_dimension = {value.get("dimension"): value.get("value")
-                                        for value in tag_values if isinstance(value, dict)}
+                                        for value in tag_values if isinstance(value, dict) and isinstance(value.get("dimension"), str)}
                     elif isinstance(tag_values, dict):
                         by_dimension = tag_values
                     suggestion["tags"] = [
-                        by_dimension.get(dimension) if by_dimension.get(dimension) is None
-                        or str(by_dimension.get(dimension)) in role["tags"].get(dimension, {}) else None
-                        for dimension in role["tags"]
+                        value if type(value) is int and str(value) in role["tags"][dimension] else None
+                        for dimension in role["tags"] for value in [by_dimension.get(dimension)]
                     ]
-                suggestion["title"] = str(suggestion.get("title", "")).strip()
+                suggestion["title"] = suggestion.get("title", "").strip() if isinstance(suggestion.get("title"), str) else ""
                 results.append(suggestion)
+            missing = sorted(expected_paths - received_paths)
+            if missing:
+                errors.append({"paths": missing, "error": "AI 未返回这些文件的建议，可手工填写或重新标注。"})
         except (EditorError, ValueError) as exc:
             errors.append({"paths": [item["path"] for item in batch], "error": str(exc).replace(api_key, "[已隐藏]")})
         if batch_index + 1 < len(batches) and interval:

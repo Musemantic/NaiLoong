@@ -8,7 +8,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path, PurePosixPath
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import quote, unquote
 
 try:
     from .data_editor import load_json, normalize_image_url
@@ -123,7 +123,7 @@ def project_metadata(root: Path) -> dict:
             "tags": tags,
             "examples": examples[:12],
         })
-    return {"roles": roles}
+    return {"roles": roles, "tag_translations": load_json(data_dir / "tag-translations.json")}
 
 
 def _entries_for_paths(root: Path, owner: str, paths: set[str]) -> dict[str, dict]:
@@ -393,10 +393,10 @@ def _record_commit(value: str, root: Path) -> str:
         return ""
     if canonical.startswith("assets/placeholders/"):
         return ""
-    parts = urlsplit(canonical).path.strip("/").split("/")
-    if len(parts) < 5 or not SHA1.fullmatch(parts[3]):
+    parts = canonical.split("/", 2)
+    if len(parts) != 3 or not SHA1.fullmatch(parts[1]):
         return ""
-    return parts[3]
+    return parts[1]
 
 
 def _deleted_file_parent(root: Path, path: str, base: str) -> str:

@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const state = { scan: null, roles: [], items: [], suggestions: new Map() };
+  const state = { scan: null, roles: [], items: [], suggestions: new Map(), aiSuggested: new Set(), busy: false, dirty: false };
   const $ = (id) => document.getElementById(id);
   const esc = (value) => String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -42,6 +42,22 @@
     }
   }
 
+  function setFlow(active, complete = false) {
+    document.querySelectorAll(".git-flow li").forEach((node, index) => {
+      node.classList.toggle("flow-active", !complete && index === active);
+      node.classList.toggle("flow-done", complete || index < active);
+      if (!complete && index === active) node.setAttribute("aria-current", "step");
+      else node.removeAttribute("aria-current");
+    });
+  }
+
+  function lockReview(active) {
+    state.busy = active;
+    $("reviewFields").disabled = active;
+    for (const id of ["scanButton", "commitCount", "changeFilter", "selectAllButton", "provider", "modelName", "apiKey", "batchSize", "requestInterval", "retryCount", "annotateButton"]) $(id).disabled = active;
+    syncSummary();
+  }
+
   function activeRole(item) {
     const suggestion = state.suggestions.get(item.id);
     const roleId = suggestion && Object.prototype.hasOwnProperty.call(suggestion, "role_id")
@@ -53,7 +69,7 @@
     const dimensions = role ? Object.entries(role.tags) : [];
     if (Array.isArray(value)) return dimensions.map((_, index) => {
       const tag = value[index];
-      return Number.isInteger(tag) && tag >= 0 ? tag : null;
+      return Number.isInteger(tag) && Object.prototype.hasOwnProperty.call(dimensions[index][1], String(tag)) ? tag : null;
     });
     if (value && typeof value === "object") return dimensions.map(([dimension, values]) => {
       const tag = value[dimension];
@@ -78,7 +94,7 @@
   }
 
   function roleOptions(selected) {
-    return '<option value="">選擇角色</option>' + state.roles.map((role) =>
+    return '<option value="">选择角色</option>' + state.roles.map((role) =>
       '<option value="' + esc(role.id) + '"' + (role.id === selected ? " selected" : "") + '>' +
       esc((role.icon ? role.icon + " " : "") + role.name) + " · " + esc(role.id) + "</option>"
     ).join("");
@@ -106,12 +122,13 @@
     }) || role.categories[0] || null;
   }
 
-  function tagOptions(role, index, current) {
+  function tagOptions(role, itemId, current) {
     if (!role) return "";
     return Object.entries(role.tags).map(([dimension, values], dimensionIndex) => {
-      const selected = Array.isArray(current) ? current[index] : null;
-      const controlId = "tag-" + index + "-" + dimensionIndex;
-      return '<label class="field"><span>' + esc(dimension) + '</span>' +
+      const selected = Array.isArray(current) ? current[dimensionIndex] : null;
+      const controlId = "tag-" + itemId + "-" + dimensionIndex;
+      const translated = state.scan && state.scan.metadata.tag_translations && state.scan.metadata.tag_translations[dimension];
+      return '<label class="field"><span>' + esc(translated ? translated.zh : dimension) + '</span>' +
         '<select data-tag-index="' + dimensionIndex + '" id="' + esc(controlId) + '"><option value="">未知</option>' +
         Object.entries(values).map(([localId, label]) =>
           '<option value="' + esc(localId) + '"' + (String(selected) === localId ? " selected" : "") + '>' +
@@ -165,7 +182,7 @@
           esc(entry.title) + '" placeholder="输入表情标题"></div>' +
         '<div class="tags-editor" data-tags-for="' + esc(item.id) + '">' +
           (role ? tagOptions(role, item.id, entry.tags) : '<p class="field-note field-wide">选择角色后显示对应标签。</p>') + '</div>' +
-        (suggestion ? '<p class="field-note field-wide">已填入 AI 建议，可直接编辑。</p>' : "") +
+        (state.aiSuggested.has(item.id) ? '<p class="field-note field-wide is-ai">已填入 AI 建议，请核对标题和标签。</p>' : "") +
         '</div>';
     }
     let reason = item.kind === "updated" ? item.change_reason : (item.change_reason || "");
@@ -207,10 +224,18 @@
   }
 
   function syncSummary() {
-    const selectedCount = state.items.filter((item) => item.selected !== false && item.kind !== "deleted").length;
+    const selectedItems = state.items.filter((item) => item.selected !== false && item.kind !== "deleted");
+    const selectedCount = selectedItems.length;
     const removeCount = state.items.filter((item) => item.remove_record === true).length;
-    $("applySummary").textContent = selectedCount + " 条图片变更将写入" + (removeCount ? "，另移除 " + removeCount + " 条删除图片记录" : "") + "。未选择的项目保持不变。";
-    $("applyButton").disabled = selectedCount + removeCount === 0;
+    const incomplete = selectedItems.filter((item) => {
+      const role = activeRole(item);
+      const draft = state.suggestions.get(item.id) || {};
+      return !role || !activeEntry(item).title.trim() || !role.categories.some((category) => category.id === (draft.category_id || item.category_id || item.category_hint));
+    }).length;
+    const oversized = selectedItems.filter((item) => item.size_bytes > 5 * 1024 * 1024).length;
+    $("applySummary").textContent = selectedCount + " 条图片变更已勾选" + (removeCount ? "，另移除 " + removeCount + " 条记录" : "") +
+      (incomplete ? "；" + incomplete + " 条需补齐角色、分类或标题" : "") + (oversized ? "；" + oversized + " 张超过 5 MB，需压缩后重扫或取消勾选" : "") + "。";
+    $("applyButton").disabled = state.busy || !state.scan || !state.scan.scan_id || selectedCount + removeCount === 0 || incomplete > 0 || oversized > 0;
   }
 
   function preserveEdits() {
@@ -238,11 +263,6 @@
     }
   }
 
-  function visibleSelection() {
-    preserveEdits();
-    return state.items.filter((item) => item.selected && item.kind !== "deleted").map((item) => item.id);
-  }
-
   async function loadProject() {
     const status = $("scanStatus");
     try {
@@ -252,12 +272,15 @@
       $("scanButton").disabled = !onWorkBranch;
       status.textContent = result.image_head
         ? "本地仓库已连接，可以扫描 image 分支。"
-        : "本地仓库已连接，但还没有本地 image 分支。请先运行 git fetch origin。";
+        : "本地仓库已连接，但还没有本地 image 分支。";
       $("branchName").textContent = result.work_branch || "detached HEAD";
       $("headSha").textContent = result.image_head ? "image · " + result.image_head : "本地 image 分支尚未建立";
-      if (!onWorkBranch) {
+      setFlow(onWorkBranch && result.image_head ? 1 : 0);
+      if (!onWorkBranch || !result.image_head) {
         $("scanError").textContent = "当前分支是 " + (result.work_branch || "detached HEAD") +
-          "。请先切换到 meme/... 投稿工作分支，再扫描并写入 JSON。";
+          (!onWorkBranch ? "。请先切换到 meme/... 投稿工作分支，再刷新页面。" :
+            "。没有本地 image 时：git fetch origin，然后 git branch --track image origin/image；若 Fork 中也没有 image，先按教程提交图片。");
+        $("scanButton").disabled = true;
         $("scanError").hidden = false;
       } else {
         $("scanError").hidden = true;
@@ -270,10 +293,13 @@
   }
 
   async function scan() {
+    if (state.busy) return;
+    if (state.dirty && !window.confirm("重新扫描会清空当前尚未写入的编辑和 AI 建议，继续吗？")) return;
     const button = $("scanButton");
     const errorNode = $("scanError");
     errorNode.hidden = true;
     preserveEdits();
+    lockReview(true);
     setBusy(button, true, "正在扫描…");
     $("scanStatus").textContent = "比较最近提交的文件变化…";
     try {
@@ -282,15 +308,19 @@
       state.roles = result.metadata.roles;
       state.items = result.changes.map((item) => ({ ...item, selected: item.kind !== "deleted", remove_record: false }));
       state.suggestions.clear();
-      $("branchName").textContent = "image";
-      $("headSha").textContent = result.head;
+      state.aiSuggested.clear();
+      state.dirty = false;
+      $("changeFilter").value = "all";
+      $("aiStatus").textContent = "";
+      $("applyError").hidden = true;
+      $("branchName").textContent = result.work_branch;
+      $("headSha").textContent = "读取 image · " + result.head.slice(0, 12);
+      $("scanSource").textContent = "图片来源：image · " + result.base.slice(0, 10) + " → " + result.head.slice(0, 10) + " / JSON 写入：" + result.work_branch +
+        "。扫描只读取本地提交，请确认这些图片已推送到公开 Fork。";
+      $("scanSource").hidden = false;
       $("scanStatus").textContent = "已扫描 " + result.commit_count + " 个 commit · 基准 " + result.base.slice(0, 10);
       $("applySuccess").hidden = true;
-      $("flowProgress").style.width = "67%";
-      document.querySelectorAll(".git-flow li").forEach((node, index) => {
-        node.classList.toggle("flow-active", index === 2);
-        node.classList.toggle("flow-done", index < 2);
-      });
+      setFlow(result.changes.length ? 2 : 1);
       render();
     } catch (error) {
       errorNode.textContent = error.message;
@@ -298,19 +328,22 @@
       $("scanStatus").textContent = "扫描失败";
     } finally {
       setBusy(button, false);
+      lockReview(false);
       button.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 2.5a4.5 4.5 0 1 0 2.9 7.94L13 13.5M7 4.5v3m-1.5-1.5h3"/></svg>扫描 image 分支';
     }
   }
 
   async function annotate() {
+    if (state.busy || !state.scan || !state.scan.scan_id) return;
     preserveEdits();
     const selected = state.items.filter((item) => item.kind !== "deleted" && item.selected).map((item) => item.id);
     if (!selected.length) { toast("请先选择要标注的图片。"); return; }
     const button = $("annotateButton");
     const status = $("aiStatus");
+    const keyInput = $("apiKey");
+    if (!keyInput.value.trim() || !$("modelName").value.trim()) { toast("请填写 API 密钥和模型名称。"); return; }
     status.className = "ai-status";
     status.textContent = "正在准备角色参考图和图片…";
-    const keyInput = $("apiKey");
     const payload = {
       scan_id: state.scan.scan_id,
       item_ids: selected,
@@ -321,6 +354,8 @@
       interval: Number($("requestInterval").value),
       retries: Number($("retryCount").value)
     };
+    keyInput.value = "";
+    lockReview(true);
     setBusy(button, true, "正在请求…");
     try {
       const result = await api("/api/annotate", payload);
@@ -328,18 +363,21 @@
       for (const suggestion of result.suggestions || []) {
         const item = state.items.find((value) => value.path === suggestion.path);
         if (!item) continue;
-        const suggestedRole = suggestion.role_id || (item.kind === "updated" ? item.role_id : null);
+        const previous = state.suggestions.get(item.id) || {};
+        const suggestedRole = item.kind === "updated" ? (previous.role_id || item.role_id) : (suggestion.role_id || previous.role_id || null);
         const role = state.roles.find((value) => value.id === suggestedRole) || null;
         let tags = Array.isArray(suggestion.tags) ? suggestion.tags : [];
-        if (item.kind === "updated" && role && tags.length !== Object.keys(role.tags).length) {
-          tags = tagsToArray(item.entry && item.entry.tags, role);
-        }
+        if (item.kind === "updated") tags = previous.tags || tagsToArray(item.entry && item.entry.tags, role);
+        const category = categoryForMedia(role, item.media_type);
         state.suggestions.set(item.id, {
-          title: suggestion.title,
+          title: suggestion.title || previous.title || (item.entry && item.entry.title) || "",
           role_id: suggestedRole,
-          tags
+          category_id: role && role.id === previous.role_id && previous.category_id ? previous.category_id : (item.kind === "updated" ? item.category_id : (category ? category.id : "")),
+          tags: tagsToArray(tags, role)
         });
+        state.aiSuggested.add(item.id);
       }
+      state.dirty = state.dirty || state.aiSuggested.size > 0;
       render();
       const problems = (result.errors || []).map((value) => value.paths.join(", ") + "：" + value.error);
       status.textContent = "已收到 " + (result.suggestions || []).length + " 条建议。" +
@@ -353,6 +391,7 @@
     } finally {
       payload.api_key = "";
       setBusy(button, false);
+      lockReview(false);
       button.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m8 1 .9 4.1L13 4l-2.2 3.5L15 9l-4.3.5L12 14l-3.5-2.2L6 15l-.4-4.3L1 12l2.2-3.5L0 6l4.3-.4L3 1l3.5 2.2z"/></svg>开始批量标注';
     }
   }
@@ -376,6 +415,7 @@
   }
 
   async function apply() {
+    if (state.busy || !state.scan || !state.scan.scan_id) return;
     const entries = decisions();
     const selected = entries.filter((item) => item.selected).length;
     const removed = entries.filter((item) => item.remove_record).length;
@@ -384,29 +424,36 @@
       "。数据校验失败时会自动恢复。继续吗？";
     if (!window.confirm(confirmation)) return;
     const button = $("applyButton");
+    $("applyError").hidden = true;
+    lockReview(true);
+    setFlow(3);
     setBusy(button, true, "校验并写入…");
     try {
       const result = await api("/api/apply", {
         scan_id: state.scan.scan_id,
         decisions: entries
       });
-      $("flowProgress").style.width = "100%";
-      document.querySelectorAll(".git-flow li").forEach((node, index) => {
-        node.classList.toggle("flow-active", index === 3);
-        node.classList.add("flow-done");
-      });
+      setFlow(3, true);
       $("scanStatus").textContent = "已写入并通过完整数据校验。";
       state.scan.scan_id = "";
+      state.dirty = false;
       toast("写入完成：" + result.result.written_files.join("、"));
       $("reviewWorkspace").hidden = true;
       $("emptyReview").hidden = true;
       $("applySuccess").hidden = false;
       $("writtenFiles").textContent = result.result.written_files.join("、") || "所选删除记录已处理。";
+      const shellQuote = (value) => "'" + value.replace(/'/g, "'\\''") + "'";
+      $("nextCommands").textContent = "git status\ngit add -- " + result.result.written_files.map((file) => shellQuote("data/" + file)).join(" ") +
+        '\ngit diff --staged\ngit commit -m "feat: 添加表情记录"\ngit push -u origin ' + shellQuote(state.scan.work_branch);
+      $("applySuccess").scrollIntoView({ behavior: "smooth", block: "center" });
     } catch (error) {
+      setFlow(2);
+      $("applyError").textContent = error.message;
+      $("applyError").hidden = false;
       toast(error.message);
     } finally {
       setBusy(button, false);
-      button.disabled = !state.scan || !state.scan.scan_id;
+      lockReview(false);
       button.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.3 6.2 11.5 13 4.5M2 14h12"/></svg>确认并写入数据';
     }
   }
@@ -415,10 +462,13 @@
     $("scanButton").addEventListener("click", scan);
     $("changeFilter").addEventListener("change", () => { preserveEdits(); render(); });
     $("selectAllButton").addEventListener("click", () => {
+      preserveEdits();
+      state.dirty = true;
       state.items.filter((item) => item.kind !== "deleted").forEach((item) => { item.selected = true; });
       render();
     });
     $("changeGroups").addEventListener("change", (event) => {
+      state.dirty = true;
       const roleSelect = event.target.closest("[data-role-id]");
       if (roleSelect) {
         preserveEdits();
@@ -426,7 +476,7 @@
         const suggestion = state.suggestions.get(item.id) || {};
         suggestion.role_id = roleSelect.value || null;
         const role = state.roles.find((value) => value.id === roleSelect.value);
-        const hinted = categoryForMedia(role, item.category_hint);
+        const hinted = categoryForMedia(role, item.media_type);
         suggestion.category_id = hinted ? hinted.id : "";
         suggestion.tags = role ? Object.keys(role.tags).map(() => null) : [];
         state.suggestions.set(item.id, suggestion);
@@ -446,7 +496,8 @@
       preserveEdits();
       syncSummary();
     });
-    $("changeGroups").addEventListener("input", preserveEdits);
+    $("changeGroups").addEventListener("input", () => { state.dirty = true; preserveEdits(); syncSummary(); });
+    window.addEventListener("beforeunload", (event) => { if (state.dirty || state.busy) { event.preventDefault(); event.returnValue = ""; } });
     $("provider").addEventListener("change", () => {
       $("modelName").value = modelDefaults[$("provider").value];
     });

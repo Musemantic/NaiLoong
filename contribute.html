@@ -48,31 +48,48 @@
       <div class="lesson-layout">
         <aside class="lesson-rail" aria-label="教程步骤">
           <ol id="stepNav"></ol>
-          <div class="git-visual" aria-label="当前教程步骤在 Git 分支中的位置">
-            <div class="git-visual-heading"><span>分支路线</span><span class="git-legend"><i></i> main <i></i> image <i></i> 投稿</span></div>
-            <svg viewBox="0 0 300 150" role="img" aria-labelledby="gitDiagramTitle">
-              <title id="gitDiagramTitle">main、image 和投稿分支示意图</title>
-              <path class="branch-line main-line" d="M26 38H274"/>
-              <path class="branch-line image-line" d="M80 38v42h194"/>
-              <path class="branch-line work-line" d="M130 38v80h144"/>
-              <g class="commit-node node-main"><circle cx="38" cy="38" r="6"/><circle cx="94" cy="38" r="6"/><circle cx="150" cy="38" r="6"/><circle cx="218" cy="38" r="6"/><circle cx="274" cy="38" r="6"/></g>
-              <g class="commit-node node-image"><circle cx="80" cy="80" r="6"/><circle cx="148" cy="80" r="6"/><circle cx="216" cy="80" r="6"/><circle cx="274" cy="80" r="6"/></g>
-              <g class="commit-node node-work"><circle cx="130" cy="118" r="6"/><circle cx="196" cy="118" r="6"/><circle cx="274" cy="118" r="6"/></g>
-              <text x="18" y="20">main</text><text x="18" y="84">image</text><text x="18" y="123">meme/投稿</text>
-              <circle class="active-pulse" cx="150" cy="38" r="11"/>
-            </svg>
-          </div>
+           <div class="branch-guide">
+             <strong>两种分支，各有用途</strong>
+             <p><i class="image-dot"></i><code>image</code> 长期保存原图</p>
+             <p><i class="work-dot"></i><code>meme/…</code> 提交 JSON 记录</p>
+             <a class="link" href="docs.html#/github-beginner-guide/术语速查">查看 Git 术语 →</a>
+           </div>
         </aside>
 
         <article class="lesson-content">
-          <p class="step-description" id="stepDescription"></p>
-          <div class="step-actions" id="stepActions"></div>
+           <p class="step-description" id="stepDescription"></p>
+           <div class="step-actions" id="stepActions"></div>
+           <section class="git-visual" aria-labelledby="gitVisualTitle">
+             <div class="git-visual-heading"><div><p class="eyebrow">跟着命令，看懂变化</p><h3 id="gitVisualTitle">Git 操作演示</h3></div><span class="demo-label">演示 · 不执行命令</span></div>
+             <div class="repo-map">
+               <div><span>项目主仓库 · upstream</span><strong>lin-alg / NaiLoong</strong><small id="upstreamState"></small></div>
+               <div><span>你的 GitHub Fork · origin</span><strong>你的用户名 / NaiLoong</strong><small id="originState"></small></div>
+               <div class="local-repo"><span>你的电脑 · 本地仓库</span><strong id="demoHead"></strong><small id="workingState"></small></div>
+             </div>
+             <div class="branch-chart" id="branchChart">
+               <div class="branch-labels">
+                 <div data-lane="main"><code>main</code><small>项目基线</small><b>HEAD</b></div>
+                 <div data-lane="image"><code>image</code><small>原图留在 Fork</small><b>HEAD</b></div>
+                 <div data-lane="work"><code>meme/…</code><small>JSON 发起 PR</small><b>HEAD</b></div>
+               </div>
+               <div class="branch-plot">
+                 <svg id="gitDiagram" viewBox="0 0 520 222" role="img" aria-labelledby="gitDiagramTitle gitDiagramDescription">
+                   <title id="gitDiagramTitle">本地提交历史</title><desc id="gitDiagramDescription"></desc>
+                   <g id="gitDiagramContent"></g>
+                 </svg>
+               </div>
+             </div>
+             <p class="graph-key">A / B：项目基线 · I：图片快照 · J：JSON 快照<br>圆点 = commit · 虚线 = 尚无新 commit · HEAD = 当前分支</p>
+             <div class="demo-operation" aria-live="polite" aria-atomic="true"><code id="demoCommand"></code><p id="demoExplanation"></p></div>
+             <div class="demo-controls"><button class="btn btn-secondary" id="demoPrevious" type="button">← 上个操作</button><span id="demoCounter"></span><button class="btn btn-secondary" id="demoNext" type="button">下个操作 →</button></div>
+           </section>
           <div class="terminal" id="terminalBlock" hidden>
             <div class="terminal-head"><span><i></i><i></i><i></i> Git Bash</span><button class="copy-command" id="copyCommand" type="button" aria-label="复制命令" title="复制命令">复制</button></div>
             <pre><code id="commandText"></code></pre>
             <p id="commandHint"></p>
           </div>
-          <div class="lesson-extra" id="lessonExtra"></div>
+           <div class="lesson-extra" id="lessonExtra"></div>
+           <div class="step-check"><span aria-hidden="true">✓</span><p id="stepCheck"></p></div>
           <div class="lesson-controls">
             <button class="btn btn-secondary" id="previousStep" type="button">← 上一步</button>
             <button class="btn btn-primary" id="nextStep" type="button">下一步 →</button>
@@ -83,8 +100,8 @@
 
     <section class="finish-band">
       <div class="container finish-inner">
-        <div><p class="eyebrow">READY FOR REVIEW</p><h2>图片已整理，准备提交 PR</h2><p>提交前检查 JSON 差异，并把评论投稿的完整链接放进 PR 描述。</p></div>
-        <div class="finish-actions"><a class="btn btn-primary" href="docs.html#/github-beginner-guide/5-检查并提交-pr">查看 PR 细节</a><a class="btn btn-secondary" href="index.html#contribute">其它贡献方式</a></div>
+         <div><p class="eyebrow">READY FOR REVIEW</p><h2>提交 PR 后，等待检查与审核</h2><p>维护者合并 JSON 后，网站会生成预览图并更新；你的公开 Fork 持续提供原图。</p></div>
+         <div class="finish-actions"><a class="btn btn-primary" href="docs.html#/github-beginner-guide/六-提交并创建-pr">查看 PR 细节</a><a class="btn btn-secondary" href="index.html#contribute">其它贡献方式</a></div>
       </div>
     </section>
   </main>

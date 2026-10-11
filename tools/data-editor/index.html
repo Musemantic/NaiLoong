@@ -29,7 +29,7 @@
       <div>
         <p class="eyebrow">IMAGE BRANCH REVIEW</p>
         <h1>把图片变成可审核的改动</h1>
-        <p class="editor-lead">扫描已推送的图片 commit，确认变更、补齐条目，再一次写入并校验数据。</p>
+         <p class="editor-lead">留在 meme/... 投稿分支，读取本地 image 的图片提交，复核条目后写入 JSON。</p>
       </div>
       <div class="branch-readout" aria-live="polite">
         <span class="branch-mark" aria-hidden="true">⑂</span>
@@ -38,12 +38,11 @@
     </section>
 
     <section class="git-flow" aria-label="Git 投稿进度">
-      <div class="flow-track" aria-hidden="true"><span id="flowProgress"></span></div>
-      <ol>
-        <li class="flow-done"><span>1</span><b>image 分支</b><small>图片与 commit 已推送</small></li>
-        <li class="flow-active"><span>2</span><b>扫描差异</b><small>自动识别文件变化</small></li>
-        <li><span>3</span><b>整理条目</b><small>角色、标题和标签</small></li>
-        <li><span>4</span><b>校验写入</b><small>生成 JSON 改动</small></li>
+       <ol>
+         <li><span>1</span><b>准备分支</b><small>投稿分支 + 本地 image</small></li>
+         <li><span>2</span><b>扫描差异</b><small>读取最近 N 个 commit</small></li>
+         <li><span>3</span><b>整理条目</b><small>角色、标题和标签</small></li>
+         <li><span>4</span><b>校验写入</b><small>生成 JSON 改动</small></li>
       </ol>
     </section>
 
@@ -60,7 +59,9 @@
         </button>
         <span class="scan-status" id="scanStatus" role="status" aria-live="polite">正在读取本地仓库…</span>
       </div>
-      <div class="scan-error" id="scanError" role="alert" hidden></div>
+       <div class="scan-error" id="scanError" role="alert" hidden></div>
+       <p class="scan-source" id="scanSource" hidden></p>
+       <details class="scan-help"><summary>扫描的图片从哪里来？</summary><p>编辑器读取本地 <code>image</code>，不会自动 fetch 或切换分支。先在 image 提交、推送图片，再切回 <code>meme/...</code>。若图片在另一台电脑上传，先 <code>git fetch origin</code>，到 image 执行 <code>git pull --ff-only origin image</code> 后再切回投稿分支。</p></details>
     </section>
 
     <section class="review-workspace" id="reviewWorkspace" hidden>
@@ -100,12 +101,13 @@
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m8 1 .9 4.1L13 4l-2.2 3.5L15 9l-4.3.5L12 14l-3.5-2.2L6 15l-.4-4.3L1 12l2.2-3.5L0 6l4.3-.4L3 1l3.5 2.2z"/></svg>
             开始批量标注
           </button>
-          <p class="ai-privacy">所选图片与角色参考 PNG 会发送给所选服务商。密钥只在本机内存和本次请求中使用；不会保存或记录。请检查并修改 AI 建议后再写入。</p>
+           <p class="ai-privacy">标注勾选的图片；所选图片与角色参考 PNG 经本地服务发送到官方 API。动画用 ffmpeg 转成 MP4；OpenAI / Anthropic 上传去重帧，Gemini 上传视频。密钥仅用于本次请求，不保存。已有条目的角色、分类和标签优先保留，请人工复核建议。</p>
           <p class="ai-status" id="aiStatus" role="status" aria-live="polite"></p>
         </div>
       </details>
 
-      <div class="change-groups" id="changeGroups"></div>
+       <fieldset class="review-fields" id="reviewFields"><legend class="sr-only">逐项复核图片变更</legend><div class="change-groups" id="changeGroups"></div></fieldset>
+       <div class="scan-error" id="applyError" role="alert" hidden></div>
       <div class="apply-bar">
         <p id="applySummary">扫描后可在此查看差异。</p>
         <button class="btn btn-primary" id="applyButton" type="button" disabled>
@@ -123,7 +125,7 @@
     <section class="apply-success" id="applySuccess" hidden>
       <span class="success-icon" aria-hidden="true">✓</span>
       <div><p class="eyebrow">DATA VALIDATED</p><h2>差异已写入并通过检查</h2><p id="writtenFiles"></p></div>
-      <div class="success-next"><strong>下一步：提交 JSON 改动</strong><code>git status<br>git add data/&lt;角色&gt;/&lt;分类&gt;.json<br>git diff --staged<br>git commit -m "feat: 添加表情记录"</code></div>
+       <div class="success-next"><strong>下一步：提交并推送，再创建 PR</strong><pre><code id="nextCommands"></code></pre><a class="link" href="/contribute.html#lesson">查看教程第 6 步 →</a></div>
     </section>
     <p class="editor-footer-note"><a href="/contribute.html">返回 Git 新手教程</a><span>写入前会运行完整数据校验；失败时自动恢复本次写入。</span></p>
   </main>

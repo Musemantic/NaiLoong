@@ -47,7 +47,7 @@ node tests/ghimg.test.js
 node tests/md.test.js
 ```
 
-数据、脚本或页面逻辑改动请运行相关检查；只改文档时，检查链接、示例和操作顺序即可。上述项目检查使用 Python 标准库和 Node 内置断言，不请求网络。数据投稿者运行 `python scripts/data_editor.py data` 会启动只监听 `127.0.0.1` 的本地浏览器差异编辑器；`python scripts/data_editor.py --tk data` 保留旧 Tk 编辑器。浏览器工具调用本机 Git 和校验器，不执行 PR 分支代码。可选 AI 标注通过浏览器直连用户选择的官方 API，密钥不持久化；Google 视频上传完成识别后会尝试删除临时文件。AI 输出不得绕过人工复核与完整数据校验。
+数据、脚本或页面逻辑改动请运行相关检查；只改文档时，检查链接、示例和操作顺序即可。上述项目检查使用 Python 标准库和 Node 内置断言，不请求网络。数据投稿者运行 `python scripts/data_editor.py data` 会启动只监听 `127.0.0.1` 的本地浏览器差异编辑器；`python scripts/data_editor.py --tk data` 保留旧 Tk 编辑器。浏览器工具调用本机 Git 和校验器，不执行 PR 分支代码。可选 AI 标注经本地服务请求用户选择的官方 API，密钥不持久化；Google 视频上传完成识别后会尝试删除临时文件。AI 输出不得绕过人工复核与完整数据校验。动画转成 MP4 时保留完整时长；OpenAI / Anthropic 输入按全片取最多 160 个候选帧，用 32×32 RGB 画面去掉近似重复和循环画面，再按时间顺序上传最多 12 张代表帧及其时间位置。Gemini 使用完整 MP4，不额外抽取用不到的帧。
 
 ## 数据如何变成页面
 

@@ -26,7 +26,7 @@ except ImportError:
 TOOL_DIR = Path(__file__).resolve().parent.parent / "tools" / "data-editor"
 SHA1 = re.compile(r"[0-9a-f]{40}\Z", re.IGNORECASE)
 ROOT_STATIC = {
-    "contribute.html", "docs.html", "assets/css/style.css", "assets/css/contribute.css",
+    "contribute.html", "docs.html", "assets/css/style.css", "assets/css/contribute.css", "assets/css/docs.css",
     "assets/js/contribute.js", "assets/js/docs.js", "assets/js/md.js",
     "assets/icons/favicon.svg", "assets/placeholders/naiwa_laugh.gif",
 }
@@ -71,6 +71,11 @@ def create_handler(root: Path, scans: dict, lock: threading.RLock):
 
         def do_GET(self):
             parsed = urlsplit(self.path)
+            if parsed.path == "/index.html":
+                self.send_response(302)
+                self.send_header("Location", "https://lin-alg.github.io/NaiLoong/")
+                self.end_headers()
+                return
             if parsed.path == "/api/project":
                 try:
                     result = project_metadata(root)

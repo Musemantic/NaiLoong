@@ -25,24 +25,58 @@
 .step-nav-number { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--border); border-radius: 50%; font: 12px var(--mono); }
 .lesson-rail > ol button[aria-current="step"] .step-nav-number { border-color: var(--accent); color: var(--accent); }
 .step-nav-name { overflow-wrap: anywhere; font-size: 13px; }
-.git-visual { margin-top: 20px; padding-top: 13px; border-top: 1px solid var(--border-muted); }
-.git-visual-heading { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 11px; }
-.git-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 10px; }
-.git-legend i { display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: #0969da; }
-.git-legend i:nth-of-type(2) { background: #1f883d; }
-.git-legend i:nth-of-type(3) { background: #bf8700; }
-.git-visual svg { width: 100%; margin-top: 6px; overflow: visible; }
-.git-visual text { fill: var(--muted); font: 10px var(--mono); }
-.branch-line { fill: none; stroke-width: 2; }
-.main-line { stroke: #0969da; }
+.branch-guide { margin-top: 22px; padding: 16px 10px; border-top: 1px solid var(--border-muted); font-size: 12px; }
+.branch-guide strong { display: block; margin-bottom: 10px; }
+.branch-guide p { display: flex; align-items: center; gap: 7px; margin: 8px 0; color: var(--muted); }
+.branch-guide i { width: 7px; height: 7px; border-radius: 50%; }
+.image-dot { background: #1f883d; }
+.work-dot { background: #bf8700; }
+.branch-guide a { display: inline-block; margin-top: 8px; }
+.git-visual { margin-top: 22px; border: 1px solid var(--border-muted); border-radius: 8px; background: var(--surface-2); overflow: hidden; }
+.git-visual-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 15px 18px; border-bottom: 1px solid var(--border-muted); }
+.git-visual-heading h3 { font-size: 16px; margin-top: 3px; }
+.demo-label { color: var(--muted); font-size: 11px; }
+.contribute-page .eyebrow { color: var(--muted); font-size: 11px; letter-spacing: 1px; }
+.repo-map { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 15px 18px; }
+.repo-map > div { min-width: 0; padding: 10px; background: var(--bg-subtle); border: 1px solid var(--border-muted); border-radius: 5px; }
+.repo-map span, .repo-map strong, .repo-map small { display: block; overflow-wrap: anywhere; }
+.repo-map span { color: var(--muted); font-size: 10px; }
+.repo-map strong { margin: 6px 0; font-size: 12px; font-weight: 600; }
+.repo-map small { color: var(--muted); font: 11px/1.5 var(--mono); }
+.repo-map .local-repo { border-color: var(--accent); }
+.branch-chart { display: grid; grid-template-columns: 112px minmax(0, 1fr); padding: 0 18px; }
+.branch-labels { display: grid; grid-template-rows: repeat(3, 70px); padding-top: 5px; }
+.branch-labels > div { position: relative; align-self: center; padding: 6px 0 6px 9px; border-left: 3px solid var(--border); }
+.branch-labels code { font: 12px var(--mono); background: none; padding: 0; border: 0; }
+.branch-labels small { display: block; color: var(--muted); font-size: 10px; }
+.branch-labels b { display: none; position: absolute; top: -8px; right: 4px; color: var(--accent); font: 9px var(--mono); }
+.branch-labels .lane-active { border-color: var(--accent); }
+.branch-labels .lane-active b { display: block; }
+.branch-labels .lane-future { opacity: .35; }
+.branch-plot { min-width: 0; }
+.git-visual svg { display: block; width: 100%; height: 222px; }
+.git-visual text { fill: var(--muted); font: 12px var(--font); }
+.branch-line { fill: none; stroke-width: 3; stroke-linecap: round; }
+.pending-line { stroke-dasharray: 5 7; opacity: .6; }
+.main-line { stroke: var(--accent); }
 .image-line { stroke: #1f883d; }
 .work-line { stroke: #bf8700; }
-.commit-node circle { fill: var(--surface-2); stroke-width: 2; }
-.node-main circle { stroke: #0969da; }
+.commit-node circle { fill: var(--surface-2); stroke-width: 3; }
+.node-main circle { stroke: var(--accent); }
 .node-image circle { stroke: #1f883d; }
 .node-work circle { stroke: #bf8700; }
-.active-pulse { fill: none; stroke: var(--accent); stroke-width: 1.5; transform-origin: center; animation: node-pulse 1.7s ease-out infinite; }
-@keyframes node-pulse { 0% { opacity: .9; transform: scale(.65); } 100% { opacity: 0; transform: scale(1.65); } }
+.graph-key { padding: 4px 18px 14px; color: var(--muted); font-size: 11px; }
+.demo-operation { min-height: 106px; padding: 14px 18px; border-top: 1px solid var(--border-muted); background: var(--bg-subtle); }
+.demo-operation code { display: block; font: 12px/1.5 var(--mono); overflow-wrap: anywhere; color: var(--accent); background: none; padding: 0; border: 0; }
+.demo-operation p { margin-top: 7px; font-size: 13px; color: var(--muted); line-height: 1.6; }
+.demo-controls { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 18px; border-top: 1px solid var(--border-muted); }
+.demo-controls .btn { font-size: 12px; padding: 5px 9px; }
+.demo-controls > span { color: var(--muted); font: 11px var(--mono); }
+.step-check { display: flex; gap: 10px; margin-top: 18px; font-size: 13px; line-height: 1.6; }
+.step-check > span { color: var(--primary); }
+.lesson-extra details { border-bottom: 1px solid var(--border-muted); padding: 12px 0; color: var(--muted); font-size: 13px; }
+.lesson-extra summary { cursor: pointer; color: var(--text); }
+.lesson-extra details p { padding-top: 9px; line-height: 1.7; overflow-wrap: anywhere; }
 
 .lesson-content { min-width: 0; max-width: 790px; }
 .step-description { max-width: 760px; color: var(--muted); font-size: 15px; line-height: 1.65; }
@@ -81,7 +115,7 @@
   .lesson-layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .lesson-rail > ol { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .lesson-rail > ol button { grid-template-columns: 25px minmax(0, 1fr); padding: 7px 5px; }
-  .git-visual { display: none; }
+   .branch-guide { display: none; }
 }
 @media (max-width: 540px) {
   .intro-inner { grid-template-columns: minmax(0, 1fr) 120px; gap: 8px; min-height: 0; padding-top: 22px; padding-bottom: 22px; }
@@ -97,7 +131,19 @@
   .lesson-rail > ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .step-nav-name { font-size: 11px; }
   .step-description { font-size: 14px; }
-  .terminal pre { font-size: 11px; }
+   .terminal pre { font-size: 11px; }
+   .repo-map { grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 12px; }
+   .repo-map > div { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px; padding: 8px; }
+   .repo-map strong { margin: 0; font-size: 11px; }
+   .repo-map small { grid-column: 1 / -1; }
+   .git-visual-heading { padding: 12px; align-items: flex-start; }
+   .demo-label { max-width: 72px; text-align: right; }
+   .branch-chart { padding: 0 12px; grid-template-columns: 85px minmax(0, 1fr); }
+   .branch-labels code { font-size: 11px; }
+   .branch-labels b { right: 0; }
+   .demo-operation { padding: 12px; }
+   .demo-controls { padding: 10px 12px; }
+   .graph-key { padding: 4px 12px 12px; }
   .finish-inner { align-items: flex-start; flex-direction: column; }
   .finish-actions { width: 100%; }
   .contribute-page .footer-inner { align-items: flex-start; flex-direction: column; gap: 8px; }

@@ -18,9 +18,9 @@ python scripts/data_editor.py data
 
 会在浏览器打开本地编辑器，扫描 `image` 分支上最新的commit；如本次图片分成多个 commit，可指定最近 N 个。新增图片会自动带入 URL 和动图/静态图分类；替换或重命名图片会显示新旧差异并匹配已有记录。删除图片会先提示，默认保留网站记录。确认整理后，编辑器会校验并写入数据。
 
-AI 标注支持 OpenAI、Anthropic 和 Google Gemini的api格式；需本机先安装 `ffmpeg` 才能处理 GIF。AI 会参考仓库里的角色图片和标签定义自动生成标题、角色及标签，AI 建议仍需人工核对。API key 只用于本次请求，不会保存。
+AI 标注支持 OpenAI、Anthropic 和 Google Gemini 的官方 API；需本机先安装 [ffmpeg](https://ffmpeg.org/download.html) 并加入到 PATH 中才能处理动画。动画转为完整 MP4；OpenAI / Anthropic 使用去掉近似重复画面后的代表帧，Gemini 使用视频。AI 参考角色图片和标签定义生成建议，结果需人工核对。API key 只用于本次请求，不会保存。
 
-采用AI标注方式时，可跳过下文第五节中的手动新增记录步骤；其它步骤仍按本文字教程操作。可用 `python scripts/data_editor.py --tk data` 启动旧编辑器。
+编辑器会根据image分支自动生成图片的URL，可手工补齐标题与标签，也可先使用 AI 建议。第五节介绍这套浏览器流程；运行 `python scripts/data_editor.py --tk data` 命令可启动旧 Tk 编辑器。
 
 ## 一. 初识 Git
 
@@ -90,7 +90,7 @@ D
 
 我们需要人工做决策：到底是保留他的、保留我们的，还是结合一下给出最终版本？现代编辑器都可以很方便地点击按钮来选择。
 
-处理完冲突并保存文件后，在终端输入 `git rebase --continue`（或者直接在VSCode等现代编辑器里点“继续”），直到所有冲突解决完毕，我们的 commit 就顺利接在最前面了。
+处理完冲突并保存文件后，先运行 `git add main.py`（替换为实际解决冲突的文件），再运行 `git rebase --continue`；也可在 VS Code 的源代码管理面板暂存后点“继续”。重复操作直到所有冲突解决完毕，我们的 commit 就顺利接在最前面了。
 ```
   D --> C --> B --> A
 ```
@@ -199,7 +199,7 @@ git push origin main
 `status` 查看当前分支和改动，`fetch` 获取主仓库记录（仅获取main分支），`switch`切换分支，`merge --ff-only` 将刚才下载的 upstream/main 最新代码合并到当前的本地 main 分支，且强制使用快进模式。`push` 的作用是将更新推送到自己的远程仓库。首次 push 时，需按浏览器提示登录 GitHub 账号。
 ```
 PS. Git的快进模式是什么？
-ff-only的全称是fast-forward-only，指当本地有commit的时候，不允许合并。它未考虑是否能够自动 rebase。你也可以直接git switch main 再 git pull --rebase upstream main（等价于git fetch upstream main + git rebase upstream/main）。
+ff-only 的全称是 fast-forward-only。目标分支包含当前分支的全部历史时，只需移动分支指针，就能快进。如果两边各有独立的新提交、历史已经分叉，命令会停下，不自动创建合并 commit。
 ```
 
 ## 四. 上传图片到 `image` 分支
@@ -255,7 +255,7 @@ git switch -c meme/naiwa-laugh
 
 ### 1. 安装 Python
 
-编辑器使用 Python 自带的 Tkinter 图形界面库，不需要安装第三方 Python 包。Windows 用户从 [Python 官网](https://www.python.org/downloads/) 安装 Python 3，安装界面请勾选 **Add Python to PATH**。安装后在 Git Bash 或 PowerShell 检查：
+浏览器编辑器使用 Python 标准库启动本地服务，不需要安装第三方 Python 包。Windows 用户从 [Python 官网](https://www.python.org/downloads/) 安装 Python 3.9 或更新版本，安装界面请勾选 **Add Python to PATH**。安装后在 Git Bash 或 PowerShell 检查：
 
 ```bash
 python --version
@@ -267,7 +267,7 @@ Windows 上 运行`python` 命令可能会打开微软商店，可改用 Python 
 py --version
 ```
 
-Linux 用户如果启动时报 Tkinter 缺失，请安装发行版提供的 `python3-tk`，然后重新运行编辑器。编辑器不使用 `pip install`，也不需要虚拟环境。
+编辑器不使用 `pip install`，也不需要虚拟环境。只有选择旧版 `--tk` 编辑器时才需要 Tkinter；Linux 缺少它时，安装发行版提供的 `python3-tk`。
 
 ### 2. 启动编辑器
 
@@ -283,24 +283,20 @@ Windows 也可以运行：
 py scripts/data_editor.py data
 ```
 
-编辑器打开后会自动读取 `data/manifest.json`，角色、分类和标签选项都来自当前数据，不需要手动编辑json文件。
+浏览器会打开本地地址（默认 <http://127.0.0.1:8765/>，端口被占用时自动换一个）。保持终端运行；关闭服务用 `Ctrl+C`。页面读取 `data/manifest.json`，角色、分类和标签选项来自当前数据。终端当前分支应为 `meme/...`。
 
 ### 3. 填写记录
 
-1. 在顶部选择角色和分类，例如“奶蛙”和“动图”。
-2. 点击 **新增记录**。
-3. 填写表情标题。
-4. 填写图片 URL。使用第 4 步记下的紧凑格式：`你的用户名/<40位图片commit SHA>/assets/memes/meme.gif`。
-5. 为每个标签选择最合适的值；暂时无法判断时选择“未知”，编辑器会保存为 `null`。
-6. 点击 **保存当前记录**。编辑器会格式化对应 JSON，并自动运行完整数据校验；出现错误时会撤销这次保存并显示原因。
+1. 选择要扫描的最近 N 个 image commit，点击 **扫描 image 分支**。你在image分支上新提交了几个分支，N就填几。
+2. 查看新增、更新 / 重命名和删除提醒。编辑器自动生成对应 commit 的图片 URL；原有条目会显示原图与新图的对比。删除图片时默认保留网站记录，只有明确勾选“同时从网站数据移除此条记录”才会删记录。
+3. 勾选本次要写入的图片，为每条选择角色和分类，填写标题。分类会按动图 / 静态图匹配，仍需核对。
+4. 为每个标签选择最合适的值；暂时无法判断时选择“未知”，保存为 `null`。
+5. 可选：展开 **批量 AI 标注**，填写服务商、支持视觉和结构化输出的模型及密钥，点击开始。返回后逐项核对；已有条目的角色、分类和标签会保留。
+6. 点击 **确认并写入数据**。编辑器校验全部数据，失败时自动恢复本次写入；成功后显示实际修改文件及提交命令。
 
-列表中的已有记录也可以直接选择后修改。修订记录时保留原来的图片 URL，除非你确实上传了新的图片替换原图。
+扫描读取本地 `image`，不会自动 fetch 或推送。先确认图片已推到自己的 Fork 仓库；编辑器写入的是当前 `meme/...` 分支的 JSON。扫描后若外部修改了 image 分支或当前分支，请重新扫描并复核。
 
-编辑器只是帮助填写数据，不会上传图片、创建分支或执行 Git 命令。仍要先推送图片到自己的公开 `image` 分支。
-
-顶部的 **管理角色** 可以新增、修改或删除角色；角色选择区的 **管理分类** 可以新增、修改或删除当前角色的分类。**管理标签** 只允许新增标签、修改标签名称和中英文翻译，不能删除标签或修改标签值名称，以免误删数据。新增标签时，编辑器会自动给该角色所有分类的已有条目补入 `null`。
-
-图片 URL 也可以粘贴完整的 GitHub `blob` / `raw` 地址，编辑器保存时会自动转换成项目使用的 `用户名/40位commit/路径` 紧凑格式。
+想使用旧版编辑器，可使用 `python scripts/data_editor.py --tk data`。旧版支持角色与分类的新增、修改和删除；支持新增标签、重命名标签和修改标签翻译，新增标签会给已有条目补入 `null`。图片 URL 可粘贴完整 GitHub blob / RAW 地址，保存时自动转为紧凑格式。
 
 ### 4. 在本地运行检查
 
@@ -337,7 +333,7 @@ git push -u origin meme/naiwa-laugh
 
 ## 修订已有表情
 
-从最新 `main` 分支创建工作分支，在编辑器中选择对应角色和分类，找到原条目后修改。
+在最新 `main` 分支上创建工作分支。修改标签，新增角色时，可运行旧版编辑器： `python scripts/data_editor.py --tk data`，选择原条目修改；更新图片时，可用浏览器差异编辑器自动匹配原条目。
 
 - 只改标题或标签：保留原来的 `url`。
 - 替换自己或他人的图片（比如原图不够清晰，原Fork仓库失效等）：上传新图到自己的 `image` 分支，再把原 URL 地址中的用户名和哈希值修改为自己的 GitHub 用户名和本次新 commit 的哈希值。
@@ -366,7 +362,7 @@ git pull --ff-only origin image
 
 如果 `image` 分支只在 GitHub 上存在，本地还没有，先运行 `git fetch origin`，再用 `git switch --track origin/image` 代替最后两条命令。
 
-将新图片复制到 `assets/memes` 中，然后执行第 3 步中的 `add → commit → push → rev-parse HEAD` 流程，记下新哈希。再从最新 `main` 建立一个名字不同的工作分支继续。
+将新图片复制到 `assets/memes` 中，然后执行第四节中的 `add → commit → push → rev-parse HEAD` 流程，记下新哈希。再从最新 `main` 建立一个名字不同的工作分支继续。
 
 ### GitHub 上删除工作分支后，本地分支也会消失吗？
 
@@ -410,14 +406,23 @@ git branch -d meme/naiwa-laugh
 
 ### 同步 `main` 到自己的origin时提示不能快进，或推送被拒绝怎么办？
 
-只要确认本地 main 分支没有未备份的新表情代码（改动都在 image 或工作分支上），我们可以用 reset重置 Fork 的 main 分支：
+先确认工作区干净，获取最新记录并查看双方各自新增的提交：
 
 ```bash
-git switch main
+git status
 git fetch upstream
-git reset --hard upstream/main
-git push -f origin main
+git fetch origin
+git log --oneline --left-right main...upstream/main
+git log --oneline --left-right main...origin/main
 ```
+
+保留现有分支和提交，请维护者协助判断哪些内容需要保留。如果要继续本次投稿，可以从刚下载的主仓库版本创建一个新工作分支，替换示例名称后继续第五节：
+
+```bash
+git switch -c meme/next-submission upstream/main
+```
+
+如果已经在工作分支上填写了 JSON，先提交并保留该分支，请维护者协助同步；不要覆盖这些修改。
 ### Git 命令报错，应该检查什么？
 
 | 报错 | 处理 |

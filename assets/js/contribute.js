@@ -1,77 +1,126 @@
 (function () {
   "use strict";
 
+  // Each demo state represents the result of one operation. A new branch is
+  // still at B until commit creates I/J; editing and push do not create commits.
+  const initial = { synced: false, image: false, work: false, imageCommit: false, workCommit: false,
+    imagePushed: false, workPushed: false, head: "main", files: "工作区干净", pr: false };
+  const demo = (command, explanation, changes) => ({ command, explanation, ...changes });
   const steps = [
     {
-      title: "准备 Fork 和本地仓库",
-      time: "约 5 分钟",
-      description: "Fork 之后会在你的 GitHub 账号下建立一份仓库的独立副本。表情图片保存在自己的 image 分支，表情记录则通过另一个工作分支向仓库提交 PR。",
-      commands: `# 在 GitHub 上 Fork lin-alg/NaiLoong 后，复制你自己的仓库地址\ngit clone https://github.com/<你的用户名>/NaiLoong.git\ncd NaiLoong\ngit remote add upstream https://github.com/lin-alg/NaiLoong.git\ngit remote -v\ngit config --global user.name "你的 GitHub 用户名"\ngit config --global user.email "你的 GitHub 邮箱"`,
-      hint: "把尖括号内容替换为自己的用户名。remote -v 应显示 origin 指向你的 Fork，upstream 指向 lin-alg/NaiLoong。",
-      actions: [{ label: "Git for Windows", href: "https://git-scm.com/downloads/win" }, { label: "打开项目仓库", href: "https://github.com/lin-alg/NaiLoong" }],
-      extra: "",
-      branch: "main"
+      title: "准备 Fork 和本地仓库", time: "约 5 分钟",
+      description: "先安装 Git，再在 GitHub 上 Fork 项目到自己的账号，最后 clone 到电脑。origin 是你的 Fork，upstream 是项目主仓库；它们是两个不同的远程仓库。下方演示可以逐个操作查看变化。",
+      commands: `# 先在 GitHub 点击 Fork → Create fork，再替换下面的用户名\ngit clone https://github.com/<你的用户名>/NaiLoong.git\ncd NaiLoong\ngit remote add upstream https://github.com/lin-alg/NaiLoong.git\ngit remote -v\ngit config --global user.name "你的 GitHub 用户名"\ngit config --global user.email "你的 GitHub 邮箱"`,
+      hint: "以下命令在 Git Bash 中执行。替换所有尖括号和署名示例；remote -v 应显示 origin 指向你的 Fork、upstream 指向 lin-alg/NaiLoong。",
+      actions: [{ label: "安装 Git for Windows", href: "https://git-scm.com/downloads/win" }, { label: "打开项目并 Fork", href: "https://github.com/lin-alg/NaiLoong/fork" }],
+      check: "电脑上已有 NaiLoong 文件夹，终端位于仓库根目录，两个远程地址都正确。",
+      extra: "Fork 是你在 GitHub 上的仓库副本；clone 是下载到电脑。演示中的 A、B、I、J 是快照代号，实际 commit 使用哈希编号。",
+      base: initial,
+      operations: [demo("Fork → clone", "你的 Fork 和本地 main 从同一个版本 A 开始。clone 不会让你直接修改主仓库。", {}),
+        demo("git remote add upstream …", "记住主仓库的地址，下一步才能 fetch 它的最新提交。添加远程地址不改变本地文件。", {})]
     },
     {
-      title: "同步 main 并创建投稿分支",
-      time: "约 2 分钟",
-      description: "同步主仓库的最新更改，并创建一个新的工作分支用于本次投稿。下面的 meme/naiwa-laugh 是示例分支名，建议换成能描述本次投稿的名称。",
-      commands: `git fetch upstream main\ngit switch main\ngit merge --ff-only upstream/main\ngit push origin main\ngit switch -c meme/naiwa-laugh`,
-      hint: "fetch 下载主仓库记录；merge --ff-only 只在可快进时更新；最后一条命令创建并切换到你的 JSON 投稿工作分支。",
-      actions: [],
-      extra: "你的 origin/main 只保存项目代码和 JSON 记录。不要把 image 分支合并进 main，也不要从 image 分支创建 PR。",
-      branch: "main"
+      title: "同步 main 到最新版本", time: "约 2 分钟",
+      description: "从主仓库获取最新提交，再更新本地 main 和 Fork 的 main。这是本次投稿的起点；切分支前先确认工作区没有未提交的改动。",
+      commands: `git status\ngit fetch upstream main\ngit switch main\ngit merge --ff-only upstream/main\ngit push origin main`,
+      hint: "status 应显示工作区干净；fetch 只下载记录，merge --ff-only 才更新本地 main。若不能快进，查看文字指南 FAQ。",
+      actions: [], check: "本地 main 和 origin/main 已同步，可以开始准备图片。",
+      extra: "示意图用 B 表示主仓库更新后的版本。main 作为干净的起点，图片与本次 JSON 修改分别在自己的分支提交。",
+      base: initial,
+      operations: [demo("git fetch upstream main", "下载主仓库的 B。本地文件仍在 A；fetch 本身不会切分支或更新工作区。", {}),
+        demo("git merge --ff-only upstream/main", "本地 main 快进到 B，工作区更新到这个版本。没有额外创建合并 commit。", { synced: true }),
+        demo("git push origin main", "把本地 main 的更新推到自己的 Fork，origin/main 也来到 B。", { mainPushed: true })]
     },
     {
-      title: "准备本地 image 分支",
-      time: "约 1 分钟",
-      description: "图片保存在长期公开的 image 分支，表情的修改记录保存在 meme/... 工作分支。首次投稿时通常还没有 image 分支，从当前投稿分支创建它；已有 image 时先更新本地分支。",
-      commands: `# Fork 中还没有 image 分支时：\ngit switch -c image`,
-      hint: "如果 Fork 上已有 image：运行 git fetch origin，再用 git switch --track origin/image 建立本地分支；若本地已有 image，则 git switch image 后运行 git pull --ff-only origin image。",
-      actions: [],
-      extra: "完成图片 commit 后，下一步会带你切回 meme/naiwa-laugh。image 分支不要合并进 main。",
-      branch: "image"
+      title: "准备图片专用 image 分支", time: "约 1 分钟",
+      description: "首次投稿，从刚同步的 main 创建 image。它长期保存在自己的公开 Fork，专门承载原图。已有 image 时，展开下面的说明选择对应命令。",
+      commands: `# 首次投稿，Fork 中还没有 image 时\ngit switch -c image`,
+      hint: "switch -c 创建并切换分支。此时 image 与 main 指向相同的 B，没有产生新 commit。",
+      actions: [], check: "git branch --show-current 输出 image，接下来只在这里放图片。",
+      extra: "已有远程 image、本地还没有：先 git fetch origin，再 git switch --track origin/image。本地已有 image：git switch image，再 git pull --ff-only origin image。这个长期分支每次投稿都继续使用。",
+      base: { ...initial, synced: true, mainPushed: true },
+      operations: [demo("当前：main", "先站在 main 的 B 上。分支名称是指向快照的指针。", {}),
+        demo("git switch -c image", "新建 image 指针并把 HEAD 切到它。虚线是它接下来提交图片的路线；B 仍是共同起点。", { image: true, head: "image" })]
     },
     {
-      title: "一次提交本次所有图片",
-      time: "约 3 分钟",
-      description: "把新增和替换后的图片放在仓库根目录的 assets/memes/。每张图片不超过 5 MB。建议将所有图片改动用一个 commit 提交，历史更简洁。",
-      commands: `# 将本次所有图片复制到 assets/memes/\ngit add assets/memes/\ngit status\ngit commit -m "feat: 添加新表情图片"\ngit push -u origin image\ngit rev-parse HEAD\ngit switch meme/naiwa-laugh`,
-      hint: "git status 确认只包含图片。记录 push 后 `git rev-parse HEAD` 命令输出的 commit 哈希。image 分支应长期保持公开并不要删除。",
-      actions: [],
-      extra: "注意仅应在image分支上提交图片相关的修改。",
-      branch: "image"
+      title: "提交图片并推送到 Fork", time: "约 3 分钟",
+      description: "在 assets/memes/ 放入本次静态图片或 GIF，单张不超过 5 MB，建议小于 2 MB。整理投稿区评论时下载全部原图并保持原始内容，随后一次提交这些图片。",
+      commands: `# 将本次图片复制到 assets/memes/\ngit add assets/memes/\ngit status\ngit commit -m "feat: 添加新表情图片"\ngit push -u origin image\ngit rev-parse HEAD\ngit switch main`,
+      hint: "git status 确认暂存区只有图片。记下 rev-parse HEAD 输出的 40 位图片 commit SHA，最后切回 main。",
+      actions: [], check: "图片已推到 origin/image，记下了图片 SHA，并且已经回到 main。",
+      extra: "image 和承载图片的 Fork 请长期保留且保持公开。图片链接固定到上传 commit；后续新增图片不会改变已经提交的链接。image 不合并到主仓库。",
+      base: { ...initial, synced: true, mainPushed: true, image: true, head: "image" },
+      operations: [demo("复制图片到 assets/memes/", "图片先出现在工作区，历史里还没有新的圆点。", { files: "工作区：新增图片，尚未暂存" }),
+        demo("git add assets/memes/", "把这次要提交的图片放进暂存区。add 选择内容，还没有保存快照。", { files: "暂存区：本次图片" }),
+        demo('git commit -m "feat: 添加新表情图片"', "创建图片快照 I，image 指向 I。它目前只在电脑上；main 仍在 B。", { imageCommit: true, files: "工作区干净" }),
+        demo("git push -u origin image", "把 I 上传到自己的 Fork。push 不创建新 commit，网站将从这个公开快照取原图。", { imagePushed: true }),
+        demo("git switch main", "HEAD 回到 B。工作区切回 main 的文件，图片仍保存在 image 的 I 中，编辑器可以跨分支读取。", { head: "main" })]
     },
     {
-      title: "扫描图片差异并自动整理记录",
-      time: "约 5 分钟",
-      description: "切换到meme投稿分支上启动本地浏览器编辑器。默认扫描最近一个 image commit；若连续提交了几次，可改为扫描最近 N 个。新增图片自动得到 URL 和动静分类，已有记录会显示修改前后差异。",
-      commands: `python scripts/data_editor.py data`,
-      hint: "Windows 若 python 命令不可用，可试 py scripts/data_editor.py data。编辑器自动整理的角色、标题和标签仍可手动更改。",
-      actions: [],
-      extra: "删除图片会单独提醒，默认保留网站条目；若误删，按界面中的恢复指引处理。用AI批量标注可输入api密钥。AI 会看到角色标签、标题示例和角色 PNG；会用电脑上的 ffmpeg 将 GIF 转成 MP4 并抽取代表帧。api密钥不会保存在磁盘，AI的结果需要人工复核。",
-      branch: "work"
+      title: "创建投稿分支，整理 JSON", time: "约 5 分钟",
+      description: "回到最新 main，创建这次的 meme/... 分支，再启动浏览器差异编辑器。扫描本地 image 的最近 N 个 commit，核对角色、分类、标题和标签后确认写入。",
+      commands: `git fetch upstream main\ngit merge --ff-only upstream/main\ngit switch -c meme/naiwa-laugh\npython scripts/data_editor.py data`,
+      hint: "meme/naiwa-laugh 是示例，后续命令也使用你替换的同一分支名。先安装 Python 3.9+ 并勾选 Add Python to PATH；Windows 可用 py 代替 python。",
+      actions: [{ label: "安装 Python", href: "https://www.python.org/downloads/" }],
+      check: "在 meme/... 分支完成差异复核，编辑器写入成功；git diff 可看到本次 JSON 改动。",
+      extra: "默认扫描最近一个 image commit，多次上传可增大 N。删除图片默认只提醒。AI 标注可选：GIF 经 ffmpeg 转为 MP4；抽帧会去掉近似重复画面。密钥不保存，AI 建议需人工核对。",
+      base: { ...initial, synced: true, mainPushed: true, image: true, imageCommit: true, imagePushed: true },
+      operations: [demo("git switch -c meme/naiwa-laugh", "从 main 的 B 建立本次 JSON 分支，HEAD 切到它。它与 image 各自从基线出发。", { work: true, head: "work" }),
+        demo("python scripts/data_editor.py data", "编辑器读取 image 的 I，生成固定到 I 的图片 URL。读取图片不会切换当前投稿分支。", {}),
+        demo("复核条目 → 确认并写入数据", "写入并校验 JSON，它现在是工作区里的改动；直到下一步 commit 才会出现新快照。", { files: "工作区：已校验的 JSON 改动" })]
     },
     {
-      title: "检查 JSON 并创建 Pull Request",
-      time: "约 4 分钟",
-      description: "写入后的分类文件已经过完整数据校验。提交前再次运行测试，检查暂存区只包含本次表情的修改记录，然后把工作分支推到自己的 Fork 仓库。",
+      title: "检查、提交并创建 PR", time: "约 4 分钟",
+      description: "检查本次 JSON 差异，提交到 meme/... 分支并推到自己的 Fork。接着在 GitHub 请求维护者把这个分支合并到项目的 main。",
       commands: `python scripts/validate_data.py\npython -m unittest discover -s tests -v\ngit status\ngit add data/naiwa/animated.json\ngit diff --staged\ngit commit -m "feat: 添加奶蛙狂笑表情"\ngit push -u origin meme/naiwa-laugh`,
-      hint: "把例子中的数据路径和分支名换成自己的实际值。浏览器PR时选择 base: lin-alg/NaiLoong main，compare: 你的 Fork meme/naiwa-laugh。",
+      hint: "替换数据路径和分支名；若改了多个分类文件，逐个加入暂存区。PR 目标：lin-alg/NaiLoong 的 main；来源：你的 Fork 的 meme/...。",
       actions: [{ label: "打开 GitHub PR 页面", href: "https://github.com/lin-alg/NaiLoong/compare" }],
-      extra: "查看 Files changed，确认图片没有混入 PR。若整理了投稿区评论图片，把每条原评论的完整链接贴在 PR 描述中。等待检查通过后由维护者审核合并。",
-      branch: "work"
+      check: "Files changed 只有本次 JSON 修改，PR 已创建，等待检查和维护者审核。",
+      extra: "整理投稿区时，把每条评论的完整链接放进 PR 描述，收录所认领评论的全部原图。检查报错就在同一工作分支修复、commit、push，原 PR 会自动更新。",
+      base: { ...initial, synced: true, mainPushed: true, image: true, work: true, imageCommit: true, imagePushed: true, head: "work", files: "工作区：已校验的 JSON 改动" },
+      operations: [demo("git add … → git diff --staged", "先看清这次要提交的 JSON，暂存区的内容才会进入下一个快照。", { files: "暂存区：本次 JSON" }),
+        demo('git commit -m "feat: 添加奶蛙狂笑表情"', "创建 JSON 快照 J。记录指向 I 的图片 URL，J 自己只包含本次数据修改。", { workCommit: true, files: "工作区干净" }),
+        demo("git push -u origin meme/naiwa-laugh", "将 J 推到你的 Fork。项目主仓库还没有收到这次修改。", { workPushed: true }),
+        demo("Create pull request", "请求把 Fork 的 J 合并到项目 main。PR 此时等待检查和审核，创建 PR 不等于已经合并。", { pr: true })]
     }
   ];
-
   const $ = (id) => document.getElementById(id);
   let current = 0;
+  let operation = 0;
+  const esc = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 
-  function renderNav() {
-    $("stepNav").innerHTML = steps.map((step, index) =>
-      '<li><button type="button" data-step="' + index + '"' + (index === current ? ' aria-current="step"' : "") + '>' +
-      '<span class="step-nav-number">' + (index + 1) + '</span><span class="step-nav-name">' + step.title + "</span></button></li>"
-    ).join("");
+  function renderDemo() {
+    const step = steps[current];
+    const state = Object.assign({}, step.base, ...step.operations.slice(0, operation + 1));
+    const action = step.operations[operation];
+    const head = state.head === "work" ? "meme/naiwa-laugh" : state.head;
+    $("demoHead").textContent = "HEAD → " + head;
+    $("workingState").textContent = state.files;
+    $("upstreamState").textContent = state.pr ? "main · B / PR 等待审核" : "main · B（示例最新版本）";
+    $("originState").textContent = "main · " + (state.mainPushed ? "B" : "A") +
+      (state.imagePushed ? " / image · I" : "") + (state.workPushed ? " / meme/… · J" : "");
+    document.querySelectorAll("[data-lane]").forEach((lane) => {
+      const key = lane.dataset.lane;
+      lane.classList.toggle("lane-active", key === state.head);
+      lane.classList.toggle("lane-future", key !== "main" && !state[key]);
+    });
+    const width = Math.max(180, document.querySelector(".branch-plot").clientWidth);
+    const x = (value) => Math.round(value / 520 * width);
+    $("gitDiagram").setAttribute("viewBox", "0 0 " + width + " 222");
+    const node = (position, y, label, caption, kind) => '<g class="commit-node node-' + kind + '"><circle cx="' + x(position) + '" cy="' + y + '" r="8"/><text x="' + x(position) + '" y="' + (y + 29) + '" text-anchor="middle">' + esc(label + (width >= 420 ? " · " + caption : "")) + '</text></g>';
+    let graph = '<path class="branch-line main-line" d="M' + x(40) + ' 40H' + x(state.synced ? 140 : 40) + '"/>' + node(40, 40, "A", "初始版本", "main");
+    if (state.synced) graph += node(140, 40, "B", "同步后", "main");
+    if (state.image) graph += '<path class="branch-line image-line' + (!state.imageCommit ? ' pending-line' : '') + '" d="M' + x(140) + ' 40C' + x(200) + ' 40 ' + x(170) + ' 110 ' + x(230) + ' 110H' + x(330) + '"/>' +
+      (state.imageCommit ? node(330, 110, "I", "图片快照", "image") : '<text x="' + x(320) + '" y="139" text-anchor="middle">仍指向 B</text>');
+    if (state.work) graph += '<path class="branch-line work-line' + (!state.workCommit ? ' pending-line' : '') + '" d="M' + x(140) + ' 40C' + x(220) + ' 40 ' + x(170) + ' 180 ' + x(250) + ' 180H' + x(430) + '"/>' +
+      (state.workCommit ? node(430, 180, "J", "JSON 快照", "work") : '<text x="' + x(380) + '" y="209" text-anchor="middle">仍指向 B</text>');
+    $("gitDiagramContent").innerHTML = graph;
+    $("gitDiagramDescription").textContent = action.explanation + " 当前分支 " + head + "。";
+    $("demoCommand").textContent = action.command;
+    $("demoExplanation").textContent = action.explanation;
+    $("demoCounter").textContent = "操作 " + (operation + 1) + " / " + step.operations.length;
+    $("demoPrevious").disabled = operation === 0;
+    $("demoNext").textContent = operation === step.operations.length - 1 ? "重播本步 ↺" : "下个操作 →";
   }
 
   function render() {
@@ -82,33 +131,31 @@
     $("stepDescription").textContent = step.description;
     $("commandText").textContent = step.commands;
     $("commandHint").textContent = step.hint;
+    $("stepCheck").textContent = "完成后确认：" + step.check;
     $("terminalBlock").hidden = !step.commands;
-    $("stepActions").innerHTML = step.actions.map((action) =>
-      '<a class="btn btn-secondary" href="' + action.href + '" target="_blank" rel="noopener noreferrer">' + action.label + ' ↗</a>'
-    ).join("");
-    $("lessonExtra").innerHTML = step.extra ? '<p class="step-callout">' + step.extra + "</p>" : "";
+    $("stepActions").innerHTML = step.actions.map((action) => '<a class="btn btn-secondary" href="' + action.href + '" target="_blank" rel="noopener noreferrer">' + action.label + ' ↗</a>').join("");
+    $("lessonExtra").innerHTML = '<details><summary>' + (current === 2 ? "已有 image 分支怎么做？" : "这一步的补充说明") + '</summary><p>' + esc(step.extra) + '</p></details>';
     $("previousStep").disabled = current === 0;
-    $("previousStep").style.visibility = current === 0 ? "hidden" : "visible";
     $("nextStep").textContent = current === steps.length - 1 ? "重新查看第 1 步 ↺" : "下一步 →";
     $("lessonProgress").style.width = ((current + 1) / steps.length * 100) + "%";
     document.querySelector(".lesson-progress").setAttribute("aria-valuenow", String(current + 1));
-    renderNav();
-    const active = document.querySelector(".active-pulse");
-    const coordinates = step.branch === "image" ? [148, 80] : step.branch === "work" ? [196, 118] : [150, 38];
-    active.setAttribute("cx", coordinates[0]);
-    active.setAttribute("cy", coordinates[1]);
+    $("stepNav").innerHTML = steps.map((value, index) => '<li><button type="button" data-step="' + index + '"' + (index === current ? ' aria-current="step"' : "") + '><span class="step-nav-number">' + (index + 1) + '</span><span class="step-nav-name">' + value.title + '</span></button></li>').join("");
+    renderDemo();
   }
 
   function changeStep(value) {
     current = Math.max(0, Math.min(steps.length - 1, value));
+    operation = 0;
     render();
     $("lessonTitle").focus({ preventScroll: true });
-    document.getElementById("lesson").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("lesson").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   async function copy() {
+    let copied = false;
     try {
       await navigator.clipboard.writeText(steps[current].commands);
+      copied = true;
     } catch (error) {
       const area = document.createElement("textarea");
       area.value = steps[current].commands;
@@ -116,27 +163,42 @@
       area.style.opacity = "0";
       document.body.append(area);
       area.select();
-      document.execCommand("copy");
+      copied = document.execCommand("copy");
       area.remove();
+      $("copyCommand").focus({ preventScroll: true });
     }
     const message = $("copyToast");
+    message.textContent = copied ? "命令已复制，请替换示例名称后执行" : "复制失败，请手动选择命令复制";
     message.hidden = false;
     window.clearTimeout(copy.timer);
-    copy.timer = window.setTimeout(() => { message.hidden = true; }, 1800);
+    copy.timer = window.setTimeout(() => { message.hidden = true; }, 2600);
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     render();
+    if (typeof ResizeObserver !== "undefined") {
+      let lastWidth = 0;
+      new ResizeObserver(([entry]) => {
+        if (entry.contentRect.width !== lastWidth) {
+          lastWidth = entry.contentRect.width;
+          renderDemo();
+        }
+      }).observe(document.querySelector(".branch-plot"));
+    }
     $("previousStep").addEventListener("click", () => changeStep(current - 1));
     $("nextStep").addEventListener("click", () => changeStep((current + 1) % steps.length));
     $("copyCommand").addEventListener("click", copy);
+    $("demoPrevious").addEventListener("click", () => { operation = Math.max(0, operation - 1); renderDemo(); });
+    $("demoNext").addEventListener("click", () => { operation = (operation + 1) % steps[current].operations.length; renderDemo(); });
     $("stepNav").addEventListener("click", (event) => {
       const button = event.target.closest("[data-step]");
       if (button) changeStep(Number(button.dataset.step));
     });
     document.addEventListener("keydown", (event) => {
-      if (event.altKey && event.key === "ArrowRight") changeStep(current + 1);
-      if (event.altKey && event.key === "ArrowLeft") changeStep(current - 1);
+      if (event.altKey && (event.key === "ArrowRight" || event.key === "ArrowLeft")) {
+        event.preventDefault();
+        changeStep(current + (event.key === "ArrowRight" ? 1 : -1));
+      }
     });
   });
 })();
