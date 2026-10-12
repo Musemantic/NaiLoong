@@ -82,6 +82,7 @@
 - 桌宠由可选的 `data/pet.json` 驱动：`sheet` 指向 `assets/` 下已存在的雪碧图；`frameWidth`、`frameHeight`、`columns`、`rows` 为正整数；`animations` 是非空数组，每项含唯一小写 `id`、小于 `rows` 的 `row` 和逐帧 `durations`（每项 1–3000 毫秒，帧数不超过 `columns`），必须包含 `idle`；`size` 可选，取值 24–400 像素。桌宠的台词和音频复用当前角色的 `voice.json`，不在 `pet.js` 中写死素材或台词。
 - 校验器拒绝数据集中重复的图片 URL，包含同一文件的 blob 与 RAW 地址。图片内容是否重复由人工审核判断。
 - 哈希去重使用主分支 `hash.txt` 和 GitHub Actions Cache 中的已入库缓存、预占位缓存。缓存使用共同前缀加时间戳后缀；workflow concurrency 串行化读写，任务完成后保存新缓存并删除旧缓存，失败时保留旧缓存以便下次恢复。预占位代表仍有效的待处理图片，保留在缓存中继续顺延，不写入主分支；每日归档任务才批量追加已入库哈希到 `hash.txt`，写入成功后清理 `ingested` 临时记录。待处理评论换图或清空时回收旧占位；删除未认领评论时释放占位；已认领评论删除后保留占位并标记为已删除，直到对应 PR 合并或关闭；未合并关闭 PR 时保留仍存在的 Issue 投稿占位并解除认领，纯 PR 占位释放供重新检查。
+- PR 删除旧图片 URL 并加入哈希相同的新固定 commit URL 时，按来源索引修订放行，不重新预占位；只新增重复图片仍应拒绝。PR 的占位优先于未被其他 PR 认领的评论；PR 对 PR、评论对评论先到先得。接管仅移除冲突图片的评论链接，保留说明和其余图片；接管记录先写缓存，再重试 GitHub 评论更新，未合并关闭或撤回图片时恢复评论图片与占位，合并后保留普通附件链接用于追溯。
 - 单张投稿图片严格小于或等于 5 MB；鼓励压到 2 MB 以下。数据校验器本身不下载 Fork 图片；`meme-hash.yml` 会在受信任的主仓库 workflow 中下载新增 PR 图片和 Issue 附件来执行 5 MB 检查。
 - 投稿认领优先使用 Issue 评论完整链接 `https://github.com/lin-alg/NaiLoong/issues/1#issuecomment-<id>`；一个 PR 可以包含多条链接，PR 图片必须覆盖所有被认领评论的全部图片。已存在的 `MEME-CLAIM-...` 口令仍需兼容。
 - 浏览器差异编辑器在 `meme/...` 工作分支启动，从本地 `refs/heads/image` 读取最近 N 个 commit；确认写入时验证 image SHA、工作分支和全部 data JSON 扫描快照仍一致。删除图默认只告警、不删数据；所有写入经过 `validate_data()`，失败必须恢复写入前数据。不要让 JSON 写入 image 分支。
@@ -114,6 +115,7 @@ python -m http.server 8080
 - `.github/workflows/pr-check.yml` 在所有 Pull Request 上执行校验器单元测试和全仓库数据检查。
 - `.github/workflows/deploy.yml` 仅在 `main` 更新或手动触发；测试和数据校验成功后才部署 GitHub Pages。
 - `.github/workflows/meme-hash.yml` 使用 `issue_comment` 的创建、编辑和删除事件处理 Issue 图片，使用 `pull_request_target` 处理可信主仓库脚本下的 PR 哈希检查和合并回收，并在每日北京时间 2:00 批量归档 `hash.txt`。
+- 哈希检查在同一条标记的机器人 PR 评论中更新结果、检查的 head commit 及条目、标签、来源 URL、角色、分类和配置文件变更摘要；图片检查通过不代表 Data Linter 已通过。
 - `.github/workflows/generate-previews.yml` 只在合并到 `main` 的 PR 关闭事件中运行，从合并后的数据记录下载新增或替换的原图，生成保留透明度的预览 WebP 并写入主仓库 `preview` 分支。
 - `meme-hash.yml` 不检出或执行 PR 分支代码；只用 GitHub API 读取 PR 文件和公开图片，避免 fork PR 获得主仓库写入逻辑的执行权。哈希状态使用 Actions Cache，所有读写由 workflow concurrency 串行保护；图片网络下载对临时网络错误最多重试 4 次并使用指数退避；每日归档另外使用 concurrency 锁。
 - 数据校验器对 PR 图片 URL 不做联网探测；只检查 Fork URL 结构和仓库内重复 URL。`meme-hash.yml` 的哈希和体积 job 是单独的受信任主仓库 workflow；主仓库的占位资源例外。
