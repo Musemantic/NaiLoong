@@ -42,6 +42,11 @@
     "name": "奶校徽",
     "subcategories": [
       {
+        "id": "animated",
+        "name": "动图",
+        "file": "nai-emblem/animated.json"
+      },
+      {
         "id": "static",
         "name": "静态图",
         "file": "nai-emblem/static.json"
@@ -53,6 +58,11 @@
     "id": "others",
     "name": "其他奶科生物",
     "subcategories": [
+      {
+        "id": "animated",
+        "name": "动图",
+        "file": "others/animated.json"
+      },
       {
         "id": "static",
         "name": "静态图",
