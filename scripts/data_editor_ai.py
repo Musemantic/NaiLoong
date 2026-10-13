@@ -224,7 +224,7 @@ def _prompt(scan: dict, batch: list[dict]) -> str:
         })
     items = [{"path": item["path"], "media_type": item["media_type"]} for item in batch]
     return (
-        "你是奶-hub表情包数据整理助手。请根据每个图片或视频帧，为每个文件生成简短中文标题，选择最合适的角色，"
+        "你是奶-hub表情包数据整理助手。请根据每个图片或视频帧，为每个文件生成简短中文标题（命名尽量巧妙有创意，并贴合文件的内容主题）。选择最合适的角色，"
         "并按该角色 tags 中已有的本地序号打标签。角色参考 PNG 只用于辨认形象，不是投稿条目。"
         "不要创造新角色、标签维度或标签值；无法判断的标签值填写 null，拿不准角色时 role_id 填 null。"
         "每个输入的文件路径必须原样返回。只返回符合 JSON Schema 的对象。\n\n"
