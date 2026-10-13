@@ -13,6 +13,7 @@
   const PAGE_SIZES = [4, 8, 16, 32, 64];
   const DEFAULT_PAGE_SIZE = 8;
   const STAGGER_CAP = 14;
+  const INTRO_SFX_VOLUME = 2.5; // 1 为基准
   const MAX_UPLOAD_FILES = 10;
   const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
   const UPLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/gif"]);
@@ -39,6 +40,18 @@
   let voiceAudio = null;
   let voiceAudioSrc = "";
   let voicePlaying = "";
+  let voiceSource = null;
+  let voiceRequest = 0;
+  let voiceEnded = null;
+  const voiceBuffers = new Map();
+  const voiceMedia = new Map();
+  let introAudioPlayed = false;
+  let collisionAudioContext = null;
+  let collisionResumePromise = null;
+  let lastIntroCollisionAt = 0;
+  let lastIntroTypeAt = 0;
+  let sidebarHintReady = false;
+  let homeAssetsReady = Promise.resolve();
 
   const THEME_NAMES = { auto: "跟随系统", light: "浅色", dark: "深色", naiwa: "奶蛙" };
   const THEME_ICONS = {
@@ -90,11 +103,21 @@
 
   async function fetchJSON(path) {
     if (cache.has(path)) return cache.get(path);
-    const res = await fetch(path, { cache: "no-cache" });
-    if (!res.ok) throw new Error(path + " → HTTP " + res.status);
-    const data = await res.json();
-    cache.set(path, data);
-    return data;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+      try {
+        const res = await fetch(path, { cache: "no-cache", signal: controller.signal });
+        if (!res.ok) throw new Error(path + " → HTTP " + res.status);
+        const data = await res.json();
+        cache.set(path, data);
+        return data;
+      } catch (err) {
+        // 并行预载时遇到临时断连可以重试；HTTP 错误、无效 JSON 和超时正常报错。
+        if (err.name !== "TypeError" || attempt === 2) throw err;
+        await new Promise((resolve) => setTimeout(resolve, 180 * (attempt + 1)));
+      } finally { clearTimeout(timer); }
+    }
   }
 
   function toast(message) {
@@ -308,7 +331,9 @@
       return [];
     }
     if (!Array.isArray(items)) return [];
-    return items.filter((item) => item && typeof item.src === "string" && item.src.trim());
+    const sources = items.filter((item) => item && typeof item.src === "string" && item.src.trim());
+    sources.forEach((item) => preloadVoice(item.src));
+    return sources;
   }
 
   async function loadChar(meta) {
@@ -429,6 +454,7 @@
         );
       })
       .join("");
+    updateSidebarHint();
   }
 
   function renderTabs() {
@@ -569,7 +595,7 @@
         : "") +
       ' alt="' +
       esc(alt) +
-      '" loading="lazy" decoding="async"></div>' +
+      '" loading="' + (document.documentElement.classList.contains("home-intro-active") ? "eager" : "lazy") + '" decoding="async"></div>' +
       '<div class="card-body"><div class="card-head">' +
       '<h3 class="card-title">' +
       esc(item.title) +
@@ -1183,23 +1209,24 @@
   }
 
   function countUp(node, target, delay) {
-    if (!node) return;
+    if (!node) return Promise.resolve();
     const value = Number(target) || 0;
-    if (prefersReducedMotion()) {
-      node.textContent = value;
-      return;
-    }
-    const duration = 1200;
+    const duration = prefersReducedMotion() ? 360 : 1200;
     const start = performance.now() + (delay || 0);
     node.textContent = "0";
-    const step = (now) => {
-      const t = Math.min(1, Math.max(0, (now - start) / duration));
-      const eased = 1 - Math.pow(1 - t, 3);
-      node.textContent = Math.round(value * eased);
-      if (t < 1) requestAnimationFrame(step);
-      else node.textContent = value;
-    };
-    requestAnimationFrame(step);
+    return new Promise((resolve) => {
+      const step = (now) => {
+        const t = Math.min(1, Math.max(0, (now - start) / duration));
+        const eased = 1 - Math.pow(1 - t, 3);
+        node.textContent = Math.round(value * eased);
+        if (t < 1) requestAnimationFrame(step);
+        else {
+          node.textContent = value;
+          resolve();
+        }
+      };
+      requestAnimationFrame(step);
+    });
   }
 
   function renderStats() {
@@ -1209,9 +1236,11 @@
       items += char.total;
       tags += char.tagIndex.size;
     });
-    countUp($("statItems"), items, 0);
-    countUp($("statChars"), state.manifest.length, 120);
-    countUp($("statTags"), tags, 240);
+    return Promise.all([
+      countUp($("statItems"), items, 0),
+      countUp($("statChars"), state.manifest.length, 120),
+      countUp($("statTags"), tags, 240)
+    ]);
   }
 
   function setupReveal() {
@@ -1261,14 +1290,17 @@
   }
 
   async function startPet() {
-    if (!window.NaiPet) return;
+    if (!window.NaiPet) return false;
     let pet;
     try {
       pet = await fetchJSON(CONFIG.petData);
     } catch (err) {
-      return;
+      return false;
     }
-    if (!pet || !pet.sheet || !Array.isArray(pet.animations) || !pet.animations.some((item) => item && item.id === "idle")) return;
+    if (!pet || !pet.sheet || !Array.isArray(pet.animations) || !pet.animations.some((item) => item && item.id === "idle")) return false;
+    const sheet = new Image();
+    sheet.src = pet.sheet;
+    if (!await waitForImage(sheet, 5000)) return false;
     const narrow = (window.innerWidth || 1024) < 600;
     window.NaiPet.start({
       sheet: pet.sheet,
@@ -1277,7 +1309,8 @@
       columns: pet.columns,
       rows: pet.rows,
       animations: pet.animations,
-      size: Math.round((Number(pet.size) || 104) * (narrow ? 0.72 : 1)),
+      size: Math.round((Number(pet.size) || 104) * (narrow ? 0.9 : 1)),
+      cheerSrc: EASTER_EGG.fallbackSrc,
       // 台词跟着当前角色走：奶蛙页说奶蛙话，奶蛋页只会“安~迪~”。
       lines: voiceSources,
       play: playVoiceSrc,
@@ -1285,6 +1318,7 @@
     });
     syncPetButton();
     syncPetPause();
+    return true;
   }
 
   function voiceSources() {
@@ -1293,48 +1327,116 @@
   }
 
   function stopVoice() {
+    voiceRequest += 1;
     voicePlaying = "";
+    if (voiceSource) {
+      try { voiceSource.stop(); } catch (err) {}
+      voiceSource.disconnect();
+      voiceSource = null;
+    }
     if (voiceAudio) {
       try {
         voiceAudio.pause();
       } catch (err) {
       }
     }
+    voiceEnded = null;
   }
 
-  function playVoiceSrc(src) {
-    if (!src || typeof Audio !== "function") return;
-    if (voiceAudioSrc !== src) {
-      if (voiceAudio) {
-        try {
-          voiceAudio.pause();
-          voiceAudio.src = "";
-        } catch (err) {
+  function preloadVoice(src) {
+    if (voiceBuffers.has(src)) return voiceBuffers.get(src);
+    const context = getIntroAudioContext();
+    const media = () => {
+      if (typeof Audio !== "function") return null;
+      const audio = new Audio(src);
+      audio.preload = "auto";
+      audio.volume = EASTER_EGG.volume;
+      audio.load();
+      voiceMedia.set(src, audio);
+      return new Promise((resolve) => {
+        const complete = () => {
+          clearTimeout(timer);
+          audio.removeEventListener("canplaythrough", complete);
+          audio.removeEventListener("error", complete);
+          resolve(null);
+        };
+        const timer = setTimeout(complete, 5000);
+        audio.addEventListener("canplaythrough", complete);
+        audio.addEventListener("error", complete);
+        if (audio.readyState >= 4) complete();
+      });
+    };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const ready = context ? fetch(src, { signal: controller.signal }).then((response) => {
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      return response.arrayBuffer();
+    }).then((bytes) => context.decodeAudioData(bytes)).catch(media).finally(() => clearTimeout(timer)) : Promise.resolve(media());
+    if (!context) clearTimeout(timer);
+    voiceBuffers.set(src, ready);
+    return ready;
+  }
+
+  async function playVoiceSrc(src, onEnded) {
+    if (!src || typeof Audio !== "function") {
+      if (typeof onEnded === "function") onEnded();
+      return false;
+    }
+    stopVoice();
+    const request = voiceRequest;
+    voicePlaying = src;
+    voiceEnded = typeof onEnded === "function" ? onEnded : null;
+    resumeIntroAudio();
+    const buffer = await preloadVoice(src);
+    if (collisionResumePromise) await collisionResumePromise;
+    if (request !== voiceRequest) return false;
+    const context = getIntroAudioContext();
+    if (buffer && context && context.state === "running") {
+      const source = context.createBufferSource();
+      const gain = context.createGain();
+      source.buffer = buffer;
+      gain.gain.value = EASTER_EGG.volume;
+      source.connect(gain);
+      gain.connect(context.destination);
+      voiceSource = source;
+      source.onended = () => {
+        source.disconnect();
+        gain.disconnect();
+        if (voiceSource === source) {
+          voiceSource = null;
+          voicePlaying = "";
         }
-      }
-      voiceAudio = new Audio();
+        if (request === voiceRequest && voiceEnded) {
+          const complete = voiceEnded;
+          voiceEnded = null;
+          complete();
+        }
+      };
+      source.start();
+      return true;
+    }
+    if (voiceAudioSrc !== src) {
+      voiceAudio = voiceMedia.get(src) || new Audio(src);
       voiceAudio.volume = EASTER_EGG.volume;
       voiceAudio.addEventListener("ended", () => {
-        if (voicePlaying === src) stopVoice();
+        if (voicePlaying !== src) return;
+        const complete = voiceEnded;
+        stopVoice();
+        if (complete) complete();
       });
-      voiceAudio.addEventListener("error", () => {
-        if (voicePlaying === src) stopVoice();
-      });
-      voiceAudio.src = src;
       voiceAudioSrc = src;
     }
-    voicePlaying = src;
     try {
       voiceAudio.currentTime = 0;
-      const playback = voiceAudio.play();
-      // 浏览器拦截播放时保持静默，不弹提示。
-      if (playback && typeof playback.catch === "function") {
-        playback.catch(() => {
-          if (voicePlaying === src) stopVoice();
-        });
-      }
+      await voiceAudio.play();
+      return true;
     } catch (err) {
-      if (voicePlaying === src) stopVoice();
+      if (voicePlaying === src) {
+        const complete = voiceEnded;
+        stopVoice();
+        if (complete) complete();
+      }
+      return false;
     }
   }
 
@@ -1610,6 +1712,877 @@
     });
   }
 
+  function updateSidebarHint() {
+    if (!el.sidebarNav || !el.sidebarScrollHint) return;
+    const mobile = window.matchMedia("(max-width: 1011px)").matches;
+    const dismissed = storageGet("nai-sidebar-scroll-hint") === "1";
+    const maxScroll = el.sidebarNav.scrollWidth - el.sidebarNav.clientWidth;
+    const hasMore = maxScroll > 2 && el.sidebarNav.scrollLeft < maxScroll - 2;
+    el.sidebarScrollHint.hidden = !mobile || dismissed || !hasMore;
+  }
+
+  function setupSidebarHint() {
+    if (sidebarHintReady) return;
+    sidebarHintReady = true;
+    el.sidebarNav.addEventListener("scroll", updateSidebarHint, { passive: true });
+    window.addEventListener("resize", updateSidebarHint);
+    el.sidebarScrollHint.addEventListener("click", () => {
+      storageSet("nai-sidebar-scroll-hint", "1");
+      el.sidebarScrollHint.hidden = true;
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el.sidebarNav.scrollBy({
+        left: Math.max(120, el.sidebarNav.clientWidth * 0.72),
+        behavior: reduced ? "auto" : "smooth"
+      });
+    });
+    updateSidebarHint();
+  }
+
+  function setupSectionNavigation() {
+    const nav = $("sectionNavigation");
+    const previous = $("sectionPrevious");
+    const next = $("sectionNext");
+    const sections = [$("top"), $("main"), $("contribute")];
+    const labels = ["首页", "表情库", "如何贡献"];
+    if (!nav || sections.some((section) => !section)) return;
+    let current = 0;
+    let scheduled = false;
+    let petPosition = null;
+    let navSize = { width: 0, top: 0, bottom: 0 };
+    const avoidPet = () => {
+      let center = window.innerWidth / 2;
+      if (petPosition && !petPosition.hidden && !nav.hidden) {
+        const petTop = window.innerHeight - petPosition.height - petPosition.y;
+        const petBottom = window.innerHeight - petPosition.y;
+        const half = navSize.width / 2;
+        if (petTop < navSize.bottom && petBottom > navSize.top &&
+            petPosition.x < center + half + 12 && petPosition.x + petPosition.width > center - half - 12) {
+          center = petPosition.x + petPosition.width / 2 >= center
+            ? petPosition.x - half - 12 : petPosition.x + petPosition.width + half + 12;
+          center = Math.max(half + 8, Math.min(window.innerWidth - half - 8, center));
+        }
+      }
+      const left = center + "px";
+      if (nav.style.left !== left) nav.style.left = left;
+    };
+    const headerHeight = () => document.querySelector(".site-header").getBoundingClientRect().height;
+    const update = () => {
+      scheduled = false;
+      if (document.documentElement.classList.contains("home-intro-active")) { nav.hidden = true; return; }
+      const offset = headerHeight();
+      const tops = sections.map((section) => section.getBoundingClientRect().top);
+      current = tops[2] <= offset + 80 ? 2 : tops[1] <= offset + 80 ? 1 : 0;
+      const nearStart = tops[current] > offset - window.innerHeight * 0.45;
+      const nearEnd = current < 2 && tops[current + 1] < window.innerHeight * 1.15;
+      previous.hidden = current === 0 || (current === 1 && !nearStart);
+      next.hidden = current === 2 || (current === 1 && !nearEnd);
+      nav.hidden = previous.hidden && next.hidden;
+      if (!nav.hidden) {
+        const rect = nav.getBoundingClientRect();
+        navSize = { width: rect.width, top: rect.top, bottom: rect.bottom };
+        avoidPet();
+      }
+      if (current > 0) {
+        previous.setAttribute("aria-label", "回到" + labels[current - 1]);
+        previous.setAttribute("aria-controls", sections[current - 1].id);
+      }
+      if (current < 2) {
+        next.setAttribute("aria-label", "前往" + labels[current + 1]);
+        next.setAttribute("aria-controls", sections[current + 1].id);
+      }
+    };
+    const schedule = () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(update);
+    };
+    const go = (index) => {
+      window.scrollTo({
+        top: index === 0 ? 0 : window.scrollY + sections[index].getBoundingClientRect().top - headerHeight(),
+        behavior: prefersReducedMotion() ? "auto" : "smooth"
+      });
+    };
+    previous.addEventListener("click", () => go(Math.max(0, current - 1)));
+    next.addEventListener("click", () => go(Math.min(2, current + 1)));
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    document.addEventListener("home-intro-finished", schedule);
+    document.addEventListener("pet-position", (event) => {
+      petPosition = event.detail;
+      avoidPet();
+    });
+    if (typeof ResizeObserver === "function") {
+      const observer = new ResizeObserver(schedule);
+      sections.forEach((section) => observer.observe(section));
+    }
+    update();
+  }
+
+  function introHalfExtents(body) {
+    const radians = body.rotation * Math.PI / 180;
+    const cosine = Math.abs(Math.cos(radians));
+    const sine = Math.abs(Math.sin(radians));
+    const half = body.size / 2;
+    return { x: half * (cosine + sine), y: half * (cosine + sine) };
+  }
+
+  function constrainIntroBody(body, width, height) {
+    const extent = introHalfExtents(body);
+    body.x = Math.max(extent.x, Math.min(width - extent.x, body.x));
+    body.y = Math.max(extent.y, Math.min(height - extent.y, body.y));
+  }
+
+  function makeIntroBodies(tiles, width, height) {
+    const size = tiles[0].offsetWidth || 96;
+    const inset = size * 0.72 + 24;
+    const sides = ["left", "right", "top", "bottom"];
+    for (let i = sides.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [sides[i], sides[j]] = [sides[j], sides[i]];
+    }
+
+    return tiles.map((tile, index) => {
+      const side = sides[index];
+      const along = (min, max) => min + Math.random() * Math.max(0, max - min);
+      let x = 0;
+      let y = 0;
+      if (side === "left") {
+        x = inset;
+        y = along(height * 0.28, height * 0.72);
+      } else if (side === "right") {
+        x = width - inset;
+        y = along(height * 0.28, height * 0.72);
+      } else if (side === "top") {
+        x = along(width * 0.3, width * 0.7);
+        y = inset;
+      } else {
+        x = along(width * 0.3, width * 0.7);
+        y = height - inset;
+      }
+
+      const angleToCenter = Math.atan2(height / 2 - y, width / 2 - x);
+      const angle = angleToCenter + (Math.random() - 0.5) * 0.7;
+      const speed = Math.max(width, height) * (2.45 + Math.random() * 0.3);
+      const rotation = (Math.random() - 0.5) * 34;
+      const body = {
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        launchVx: Math.cos(angle) * speed,
+        launchVy: Math.sin(angle) * speed,
+        size,
+        rotation,
+        spin: (Math.random() - 0.5) * 20,
+        side,
+        launchFrame: 28,
+        entered: true
+      };
+      tile.style.transform = "translate3d(" + (x - size / 2) + "px," + (y - size / 2) + "px,0)";
+      return body;
+    });
+  }
+
+  function introCollisionAxis(a, b) {
+    const angleA = a.rotation * Math.PI / 180;
+    const angleB = b.rotation * Math.PI / 180;
+    const axes = [
+      { x: Math.cos(angleA), y: Math.sin(angleA) },
+      { x: -Math.sin(angleA), y: Math.cos(angleA) },
+      { x: Math.cos(angleB), y: Math.sin(angleB) },
+      { x: -Math.sin(angleB), y: Math.cos(angleB) }
+    ];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const contacts = [];
+
+    for (const axis of axes) {
+      const aX = Math.cos(angleA);
+      const aY = Math.sin(angleA);
+      const bX = Math.cos(angleB);
+      const bY = Math.sin(angleB);
+      const projectionA = a.size / 2 * (Math.abs(axis.x * aX + axis.y * aY) + Math.abs(-axis.x * aY + axis.y * aX));
+      const projectionB = b.size / 2 * (Math.abs(axis.x * bX + axis.y * bY) + Math.abs(-axis.x * bY + axis.y * bX));
+      const distance = dx * axis.x + dy * axis.y;
+      const overlap = projectionA + projectionB - Math.abs(distance);
+      if (overlap <= 0) return null;
+      const direction = distance < 0 ? -1 : 1;
+      contacts.push({ overlap, normal: { x: axis.x * direction, y: axis.y * direction } });
+    }
+    return contacts.sort((a, b) => a.overlap - b.overlap);
+  }
+
+  function introTravel(body, directionX, directionY, extent, width, height) {
+    let distance = Infinity;
+    if (directionX < -0.0001) distance = Math.min(distance, (body.x - extent.x) / -directionX);
+    else if (directionX > 0.0001) distance = Math.min(distance, (width - extent.x - body.x) / directionX);
+    if (directionY < -0.0001) distance = Math.min(distance, (body.y - extent.y) / -directionY);
+    else if (directionY > 0.0001) distance = Math.min(distance, (height - extent.y - body.y) / directionY);
+    return Math.max(0, distance);
+  }
+
+  function simulateIntro(bases, width, height, targets, scales, limitMs) {
+    const fps = 60;
+    const maxSpeed = Math.max(...bases.map((base, index) => Math.hypot(base.vx, base.vy) * scales[index]));
+    const substeps = Math.max(3, Math.ceil(maxSpeed / bases[0].size / fps * 2));
+    const dt = 1 / (fps * substeps);
+    const maxFrames = Math.ceil(limitMs * fps / 1000);
+    const bodies = bases.map((base, index) => ({
+      ...base,
+      x: base.x,
+      y: base.y,
+      vx: base.vx * scales[index],
+      vy: base.vy * scales[index],
+      launchVx: base.launchVx * scales[index],
+      launchVy: base.launchVy * scales[index],
+      wallHits: 0,
+      target: targets[index],
+      exiting: false,
+      entered: true,
+      done: false
+    }));
+    const frames = [];
+    const events = [];
+    const record = (frame) => {
+      const cues = [];
+      for (let index = 0; index < bodies.length; index += 1) {
+        const body = bodies[index];
+        const base = bases[index];
+        if (frame > 58) continue;
+        const speed = Math.hypot(body.launchVx, body.launchVy) || 1;
+        const directionX = body.launchVx / speed;
+        const directionY = body.launchVy / speed;
+        const angle = body.rotation * Math.PI / 180;
+        const support = body.size / 2 * (
+          Math.abs(directionX * Math.cos(angle) + directionY * Math.sin(angle)) +
+          Math.abs(-directionX * Math.sin(angle) + directionY * Math.cos(angle))
+        );
+        const ease = (t) => t * t * (3 - 2 * t);
+        let gap;
+        if (frame < 10) gap = 30 + 52 * ease(frame / 10);
+        else if (frame < 28) gap = 82 * (1 - Math.pow((frame - 10) / 18, 3));
+        else if (frame < 32) gap = -18 * ease((frame - 28) / 4);
+        else gap = -18 + 156 * ease(Math.min(1, (frame - 32) / 26));
+        const tipDistance = support + gap;
+        cues.push({
+          x: base.x - directionX * tipDistance,
+          y: base.y - directionY * tipDistance,
+          angle: Math.atan2(directionY, directionX) * 180 / Math.PI + Math.sin(frame / 58 * Math.PI) * 1.2,
+          opacity: Math.min(1, frame / 6, (58 - frame) / 12)
+        });
+      }
+      frames.push({
+        bodies: bodies.map((body) => ({ x: body.x, y: body.y, rotation: body.rotation, done: body.done })),
+        cues
+      });
+    };
+    const collision = (frame, strength, edge) => events.push({
+      frame,
+      strength: Math.max(0.12, Math.min(1, strength)),
+      edge
+    });
+
+    record(0);
+    for (let frame = 0; frame < maxFrames; frame += 1) {
+      for (let substep = 0; substep < substeps; substep += 1) {
+        bodies.forEach((body) => {
+          if (body.done || frame < body.launchFrame) return;
+          const speed = Math.hypot(body.vx, body.vy);
+          // 滚动摩擦与空气阻力持续耗能，碰撞也有损耗。
+          const remainingSpeed = Math.max(0, speed * Math.exp(-0.18 * dt) - Math.max(width, height) * 0.2 * dt);
+          const drag = speed > 0 ? remainingSpeed / speed : 0;
+          body.vx *= drag;
+          body.vy *= drag;
+          body.spin *= drag;
+          body.x += body.vx * dt;
+          body.y += body.vy * dt;
+          body.rotation += body.spin * dt;
+
+          if (body.exiting) {
+            const outside = body.size * Math.SQRT1_2;
+            if (body.x < -outside || body.x > width + outside || body.y < -outside || body.y > height + outside) body.done = true;
+            return;
+          }
+
+          const extent = introHalfExtents(body);
+          if (!body.entered) {
+            body.entered = body.x >= extent.x && body.x <= width - extent.x &&
+              body.y >= extent.y && body.y <= height - extent.y;
+            if (!body.entered) return;
+          }
+          const hitWall = (axis, direction) => {
+            body.wallHits += 1;
+            collision(frame + 1, Math.hypot(body.vx, body.vy) / 2400, true);
+            if (body.wallHits >= body.target) {
+              body.exiting = true;
+              return;
+            }
+            if (axis === "x") {
+              body.x = direction < 0 ? extent.x : width - extent.x;
+              body.vx = -body.vx * 0.88;
+            } else {
+              body.y = direction < 0 ? extent.y : height - extent.y;
+              body.vy = -body.vy * 0.88;
+            }
+          };
+
+          if (body.x < extent.x) {
+            if (body.vx < 0) hitWall("x", -1);
+            else body.x = extent.x;
+          } else if (body.x > width - extent.x) {
+            if (body.vx > 0) hitWall("x", 1);
+            else body.x = width - extent.x;
+          }
+          if (!body.exiting) {
+            if (body.y < extent.y) {
+              if (body.vy < 0) hitWall("y", -1);
+              else body.y = extent.y;
+            } else if (body.y > height - extent.y) {
+              if (body.vy > 0) hitWall("y", 1);
+              else body.y = height - extent.y;
+            }
+          }
+        });
+
+        for (let pass = 0; pass < 5; pass += 1) {
+          for (let aIndex = 0; aIndex < bodies.length; aIndex += 1) {
+            const a = bodies[aIndex];
+            if (a.done || frame < a.launchFrame) continue;
+            const extentA = introHalfExtents(a);
+            if (a.x + extentA.x < 0 || a.x - extentA.x > width || a.y + extentA.y < 0 || a.y - extentA.y > height) continue;
+            for (let bIndex = aIndex + 1; bIndex < bodies.length; bIndex += 1) {
+              const b = bodies[bIndex];
+              if (b.done || frame < b.launchFrame) continue;
+              const extentB = introHalfExtents(b);
+              if (b.x + extentB.x < 0 || b.x - extentB.x > width || b.y + extentB.y < 0 || b.y - extentB.y > height) continue;
+              const contacts = introCollisionAxis(a, b);
+              if (!contacts) continue;
+              let contact = null;
+              let moveA = 0;
+              let moveB = 0;
+              let correction = 0;
+              for (const candidate of contacts) {
+                const capacityA = introTravel(a, -candidate.normal.x, -candidate.normal.y, extentA, width, height);
+                const capacityB = introTravel(b, candidate.normal.x, candidate.normal.y, extentB, width, height);
+                const needed = candidate.overlap + 0.6;
+                if (capacityA + capacityB < needed) continue;
+                contact = candidate;
+                correction = needed;
+                moveA = Math.min(correction / 2, capacityA);
+                moveB = Math.min(correction / 2, capacityB);
+                let remaining = correction - moveA - moveB;
+                const extraA = Math.min(remaining, capacityA - moveA);
+                moveA += extraA;
+                remaining -= extraA;
+                moveB += Math.min(remaining, capacityB - moveB);
+                break;
+              }
+              if (!contact) continue;
+              const nx = contact.normal.x;
+              const ny = contact.normal.y;
+              a.x -= nx * moveA;
+              a.y -= ny * moveA;
+              b.x += nx * moveB;
+              b.y += ny * moveB;
+              if (a.entered) constrainIntroBody(a, width, height);
+              if (b.entered) constrainIntroBody(b, width, height);
+
+              const relativeSpeed = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+              if (relativeSpeed < -30) {
+                const impulse = -(1 + 0.92) * relativeSpeed * 0.5;
+                a.vx -= impulse * nx;
+                a.vy -= impulse * ny;
+                b.vx += impulse * nx;
+                b.vy += impulse * ny;
+                collision(frame + 1, Math.abs(relativeSpeed) / 2200, false);
+              }
+              [a, b].forEach((body) => {
+                if (!body.exiting) return;
+                const extent = introHalfExtents(body);
+                const stillLeaving = (body.x <= extent.x && body.vx < 0) ||
+                  (body.x >= width - extent.x && body.vx > 0) ||
+                  (body.y <= extent.y && body.vy < 0) ||
+                  (body.y >= height - extent.y && body.vy > 0);
+                if (!stillLeaving) body.exiting = false;
+              });
+            }
+          }
+        }
+      }
+
+      record(frame + 1);
+      if (bodies.every((body) => body.done)) break;
+    }
+    return { frames, events, complete: bodies.every((body) => body.done) };
+  }
+
+  function precomputeIntro(tiles) {
+    const width = Math.max(1, window.innerWidth);
+    const height = Math.max(1, window.innerHeight);
+    const limitMs = 6800;
+    let completed = null;
+    for (let launch = 0; launch < 48; launch += 1) {
+      const bases = makeIntroBodies(tiles, width, height);
+      // 开场静止阶段同样不能叠在一起。
+      if (bases.some((a, i) => bases.slice(i + 1).some((b) => introCollisionAxis(a, b)))) continue;
+      const targets = bases.map(() => 3 + Math.floor(Math.random() * 2));
+      const scales = bases.map(() => 1 + Math.floor(launch / 12) * 0.12);
+      const route = simulateIntro(bases, width, height, targets, scales, limitMs);
+      if (!route.complete) continue;
+      completed = route;
+      if (route.events.some((event) => !event.edge)) return route;
+    }
+    return completed;
+  }
+
+  function getIntroAudioContext() {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return null;
+    try {
+      if (!collisionAudioContext) collisionAudioContext = new AudioContextClass();
+      return collisionAudioContext;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function resumeIntroAudio() {
+    const context = getIntroAudioContext();
+    if (!context || context.state !== "suspended" || collisionResumePromise) return;
+    collisionResumePromise = context.resume().catch(() => {}).finally(() => {
+      collisionResumePromise = null;
+    });
+  }
+
+  function unlockIntroAudio() {
+    resumeIntroAudio();
+    // Web Audio 的同一个 context 播放碰撞、键盘与已解码的语音。
+    // 无 Web Audio 的浏览器在这次手势中激活预载的媒体元素。
+    voiceMedia.forEach((audio) => {
+      audio.muted = true;
+      const playback = audio.play();
+      if (playback) playback.then(() => {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.muted = false;
+      }).catch(() => { audio.muted = false; });
+    });
+  }
+
+  function playIntroCollision(strength, edge) {
+    const now = performance.now();
+    if (now - lastIntroCollisionAt < 28) return;
+    lastIntroCollisionAt = now;
+    const context = getIntroAudioContext();
+    if (!context) return;
+    const playImpact = () => {
+      if (context.state !== "running") return;
+      const time = context.currentTime;
+      const force = Math.max(0.2, Math.min(1, strength));
+      const level = force * INTRO_SFX_VOLUME * (edge ? 0.78 : 1);
+      const body = context.createOscillator();
+      const bodyGain = context.createGain();
+      body.type = "triangle";
+      body.frequency.setValueAtTime((edge ? 185 : 220) + force * 110, time);
+      body.frequency.exponentialRampToValueAtTime(edge ? 105 : 130, time + 0.11);
+      bodyGain.gain.setValueAtTime(0.14 * level, time);
+      bodyGain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+      body.connect(bodyGain);
+      bodyGain.connect(context.destination);
+      body.start(time);
+      body.stop(time + 0.13);
+
+      const ping = context.createOscillator();
+      const pingGain = context.createGain();
+      ping.type = "sine";
+      ping.frequency.setValueAtTime((edge ? 760 : 970) + force * 260, time);
+      ping.frequency.exponentialRampToValueAtTime(edge ? 540 : 690, time + 0.12);
+      pingGain.gain.setValueAtTime(0.105 * level, time);
+      pingGain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+      ping.connect(pingGain);
+      pingGain.connect(context.destination);
+      ping.start(time);
+      ping.stop(time + 0.16);
+
+      const echo = context.createOscillator();
+      const echoGain = context.createGain();
+      echo.type = "sine";
+      echo.frequency.setValueAtTime((edge ? 460 : 590) + force * 90, time + 0.035);
+      echo.frequency.exponentialRampToValueAtTime(edge ? 360 : 440, time + 0.16);
+      echoGain.gain.setValueAtTime(0.065 * level, time + 0.035);
+      echoGain.gain.exponentialRampToValueAtTime(0.001, time + 0.18);
+      echo.connect(echoGain);
+      echoGain.connect(context.destination);
+      echo.start(time + 0.035);
+      echo.stop(time + 0.19);
+      playIntroNoise(context, time, 0.075 * level, 0.014, 1150);
+    };
+    if (context.state === "suspended") {
+      resumeIntroAudio();
+      if (collisionResumePromise) collisionResumePromise.then(playImpact);
+    } else playImpact();
+  }
+
+  let introNoiseBuffer = null;
+
+  function playIntroNoise(context, time, volume, duration, cutoff) {
+    if (!introNoiseBuffer || introNoiseBuffer.sampleRate !== context.sampleRate) {
+      const length = Math.ceil(context.sampleRate * 0.08);
+      introNoiseBuffer = context.createBuffer(1, length, context.sampleRate);
+      const samples = introNoiseBuffer.getChannelData(0);
+      for (let index = 0; index < samples.length; index += 1) {
+        samples[index] = (Math.random() * 2 - 1) * (1 - index / samples.length);
+      }
+    }
+    const source = context.createBufferSource();
+    const filter = context.createBiquadFilter();
+    const gain = context.createGain();
+    source.buffer = introNoiseBuffer;
+    filter.type = "highpass";
+    filter.frequency.setValueAtTime(cutoff, time);
+    gain.gain.setValueAtTime(volume, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(context.destination);
+    source.start(time, Math.random() * 0.04, duration);
+    source.stop(time + duration);
+  }
+
+  function playIntroTypeTick(character) {
+    if (/\s/.test(character)) return;
+    const now = performance.now();
+    if (now - lastIntroTypeAt < 18) return;
+    lastIntroTypeAt = now;
+    const context = getIntroAudioContext();
+    if (!context) return;
+    const playTick = () => {
+      if (context.state !== "running") return;
+      const time = context.currentTime;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const level = INTRO_SFX_VOLUME;
+      oscillator.type = "triangle";
+      oscillator.frequency.setValueAtTime(1250 + Math.random() * 380, time);
+      oscillator.frequency.exponentialRampToValueAtTime(820 + Math.random() * 160, time + 0.035);
+      gain.gain.setValueAtTime(0.03 * level, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.04);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(time);
+      oscillator.stop(time + 0.045);
+      playIntroNoise(context, time, 0.025 * level, 0.009, 2100);
+    };
+    if (context.state === "suspended") {
+      resumeIntroAudio();
+      if (collisionResumePromise) collisionResumePromise.then(playTick);
+    } else playTick();
+  }
+
+  function prepareIntroAudio() {
+    return preloadVoice(EASTER_EGG.fallbackSrc);
+  }
+
+  function playIntroLaugh() {
+    if (introAudioPlayed) return;
+    introAudioPlayed = true;
+    playVoiceSrc(EASTER_EGG.fallbackSrc);
+  }
+
+  function animateHeroText(copy, onReveal) {
+    if (!copy) return Promise.resolve();
+    const title = copy.querySelector(".hero-title");
+    const rainNodes = title ? Array.from(title.querySelectorAll("[data-title-rain]")) : [];
+    let charIndex = 0;
+    rainNodes.forEach((node) => {
+      const fragment = document.createDocumentFragment();
+      Array.from(node.textContent).forEach((character) => {
+        const span = document.createElement("span");
+        span.className = "hero-title-char";
+        span.textContent = character;
+        span.style.setProperty("--char-delay", charIndex * 65 + "ms");
+        span.style.setProperty("--rain-x", ((charIndex % 3) - 1) * 0.16 + "em");
+        fragment.appendChild(span);
+        charIndex += 1;
+      });
+      node.replaceChildren(fragment);
+    });
+
+    const brand = title && title.querySelector(".hero-brand");
+    const brandStart = Math.max(0, charIndex - 1) * 65 + 620;
+    if (title) title.classList.add("is-animating");
+    if (brand) {
+      setTimeout(() => brand.classList.add("is-landed"), brandStart);
+    }
+
+    const lead = copy.querySelector(".hero-lead-type");
+    const characters = [];
+    if (lead) {
+      const walker = document.createTreeWalker(lead, 4);
+      const textNodes = [];
+      while (walker.nextNode()) textNodes.push(walker.currentNode);
+      textNodes.forEach((node) => {
+        const fragment = document.createDocumentFragment();
+        Array.from(node.nodeValue).forEach((character) => {
+          const span = document.createElement("span");
+          span.className = "hero-lead-char";
+          span.textContent = character;
+          characters.push(span);
+          fragment.appendChild(span);
+        });
+        node.replaceWith(fragment);
+      });
+      const caret = document.createElement("span");
+      caret.className = "hero-lead-caret";
+      caret.setAttribute("aria-hidden", "true");
+      lead.appendChild(caret);
+      lead.classList.add("is-prepared");
+    }
+    copy.classList.remove("is-pending");
+    copy.classList.add("is-revealed");
+    let resolveText;
+    const textFinished = new Promise((resolve) => { resolveText = resolve; });
+    const finishText = () => {
+      copy.classList.add("is-text-done");
+      const statsReady = Promise.resolve().then(() => onReveal && onReveal());
+      requestAnimationFrame(() => {
+        // 等待按钮、背景等有限入场动画结束，跳过眨眼和光标等循环动画。
+        const animations = document.getAnimations().filter((animation) =>
+          animation.effect && animation.effect.getComputedTiming().iterations !== Infinity
+        );
+        Promise.all([
+          statsReady,
+          ...animations.map((animation) => animation.finished.catch(() => {}))
+        ]).then(resolveText);
+      });
+    };
+    const typeLead = () => {
+      if (!lead || prefersReducedMotion()) {
+        characters.forEach((character) => character.classList.add("is-shown"));
+        finishText();
+        return;
+      }
+      const caret = lead.querySelector(".hero-lead-caret");
+      lead.classList.add("is-typing", "has-typed");
+      characters.forEach((character, index) => {
+        setTimeout(() => {
+          character.classList.add("is-shown");
+          const rect = character.getBoundingClientRect();
+          const origin = lead.getBoundingClientRect();
+          caret.style.left = rect.right - origin.left + 1.5 + "px";
+          caret.style.top = rect.top - origin.top + Math.max(0, (rect.height - caret.offsetHeight) / 2) + "px";
+          playIntroTypeTick(character.textContent);
+        }, index * 30);
+      });
+      setTimeout(() => {
+        lead.classList.remove("is-typing");
+        finishText();
+      }, Math.max(0, characters.length - 1) * 30 + 120);
+    };
+    setTimeout(typeLead, brandStart + (brand ? 560 : 0));
+    return textFinished;
+  }
+
+  function waitForImage(image, timeout) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (loaded) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        image.removeEventListener("load", onLoad);
+        image.removeEventListener("error", onError);
+        if (loaded && typeof image.decode === "function") image.decode().catch(() => {}).then(() => resolve(true));
+        else resolve(loaded);
+      };
+      const onLoad = () => finish(true);
+      const onError = () => {
+        // 表情图的 error 捕获处理会继续尝试代理或本地占位图。
+        if (!image.isConnected || image.dataset.fallback) finish(false);
+      };
+      const timer = setTimeout(() => finish(false), timeout);
+      image.addEventListener("load", onLoad);
+      image.addEventListener("error", onError);
+      if (image.complete && image.naturalWidth > 0) finish(true);
+    });
+  }
+
+  async function prepareHomeAssets() {
+    const previews = Array.from(el.grid.querySelectorAll("img"));
+    await Promise.all([
+      ...previews.map(async (image) => {
+        image.loading = "eager";
+        if (await waitForImage(image, 8000)) return;
+        // 慢网或源图不可用时，提前显示现有占位图，保留原图链接。
+        delete image._gh;
+        image.dataset.fallback = "1";
+        image.src = CONFIG.fallback;
+        await waitForImage(image, 1500);
+      }),
+      ...voiceBuffers.values(),
+      ...Array.from(document.querySelectorAll(".hero-tile img"), (image) => waitForImage(image, 5000))
+    ]);
+  }
+
+  function setupHomeIntro(petReady) {
+    const visual = document.querySelector(".hero-visual");
+    const hero = document.querySelector(".hero");
+    const copy = document.querySelector(".hero-copy");
+    const tiles = visual ? Array.from(visual.querySelectorAll(".hero-tile")) : [];
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const finishWithoutMotion = () => {
+      document.documentElement.classList.remove("home-intro-active");
+      if (visual) visual.classList.add("is-finished");
+      if (hero) hero.classList.add("hero-no-visual");
+      if (copy) copy.classList.remove("is-pending");
+    };
+    if (!visual || !tiles.length || reduced.matches || (location.hash && location.hash !== "#/")) {
+      finishWithoutMotion();
+      return;
+    }
+
+    document.documentElement.classList.add("home-intro-active");
+    visual.classList.add("is-intro");
+    copy.classList.add("is-pending");
+    prepareIntroAudio();
+    const cues = tiles.map(() => {
+      const cue = document.createElement("div");
+      cue.className = "intro-cue";
+      cue.setAttribute("aria-hidden", "true");
+      visual.appendChild(cue);
+      return cue;
+    });
+    const skip = document.createElement("button");
+    skip.className = "intro-skip";
+    skip.type = "button";
+    skip.textContent = "跳过开场";
+    document.body.appendChild(skip);
+    const inertNodes = Array.from(document.body.children).filter((node) => node !== skip && node.id !== "naiPet" && !["SCRIPT", "STYLE"].includes(node.tagName));
+    const previousInert = inertNodes.map((node) => node.inert);
+    inertNodes.forEach((node) => { node.inert = true; });
+    const halfSizes = tiles.map((tile) => tile.offsetWidth / 2);
+    tiles.forEach((tile) => { tile.style.opacity = "0"; });
+    let route = null;
+    let frameIndex = 0;
+    let eventIndex = 0;
+    let startTime = 0;
+    let active = true;
+    let phase = "waiting";
+    let raf = 0;
+    const onKey = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(false);
+      } else if (event.key === "Tab") {
+        const pet = $("naiPet");
+        const focusable = phase === "waiting" && pet && !pet.hidden ? [pet, skip] : [skip];
+        const index = focusable.indexOf(document.activeElement);
+        event.preventDefault();
+        focusQuietly(focusable[(index + (event.shiftKey ? -1 : 1) + focusable.length) % focusable.length]);
+      }
+    };
+    const onRoute = () => finish(false);
+    const onResize = () => finish(false);
+    const onReducedMotion = (event) => {
+      if (event.matches) finish(false);
+    };
+    const cleanup = () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("hashchange", onRoute);
+      window.removeEventListener("resize", onResize);
+      reduced.removeEventListener("change", onReducedMotion);
+      inertNodes.forEach((node, index) => { node.inert = previousInert[index]; });
+    };
+    const finish = (animateText) => {
+      if (!active) return;
+      active = false;
+      cleanup();
+      document.documentElement.classList.remove("home-intro-active");
+      visual.classList.remove("is-intro");
+      visual.classList.add("is-finished");
+      hero.classList.add("hero-no-visual");
+      cues.forEach((cue) => cue.remove());
+      skip.remove();
+      tiles.forEach((tile) => {
+        tile.style.removeProperty("transform");
+        tile.style.removeProperty("opacity");
+      });
+      if (animateText) {
+        animateHeroText(copy, renderStats)
+          .then(() => window.NaiPet.returnIntro(playIntroLaugh))
+          .then(syncPetButton);
+      } else {
+        copy.classList.remove("is-pending");
+        renderStats();
+      }
+      document.dispatchEvent(new Event("home-intro-finished"));
+      if (!animateText) {
+        if (window.NaiPet) window.NaiPet.cancelIntro();
+        syncPetButton();
+      }
+      const title = copy.querySelector(".hero-title");
+      title.tabIndex = -1;
+      focusQuietly(title);
+    };
+    const finishBilliards = async () => {
+      phase = "assets";
+      await homeAssetsReady;
+      if (active) finish(true);
+    };
+    const draw = (now) => {
+      if (!active) return;
+      if (!startTime) startTime = now;
+      frameIndex = Math.min(route.frames.length - 1, Math.floor((now - startTime) * 60 / 1000));
+      const frame = route.frames[frameIndex];
+      frame.bodies.forEach((position, index) => {
+        const tile = tiles[index];
+        tile.style.transform = "translate3d(" + (position.x - halfSizes[index]) + "px," + (position.y - halfSizes[index]) + "px,0) rotate(" + position.rotation + "deg)";
+        tile.style.opacity = position.done ? "0" : "1";
+      });
+      cues.forEach((cue, index) => {
+        const position = frame.cues[index];
+        if (!position) { cue.style.opacity = "0"; return; }
+        cue.style.left = position.x + "px";
+        cue.style.top = position.y + "px";
+        cue.style.opacity = String(position.opacity);
+        cue.style.transform = "rotate(" + position.angle + "deg) translate(-100%, -50%)";
+      });
+      while (eventIndex < route.events.length && route.events[eventIndex].frame <= frameIndex) {
+        const event = route.events[eventIndex];
+        playIntroCollision(event.strength, event.edge);
+        eventIndex += 1;
+      }
+      if (frameIndex >= route.frames.length - 1) {
+        finishBilliards();
+        return;
+      }
+      raf = requestAnimationFrame(draw);
+    };
+
+    const start = async () => {
+      if (!active || phase !== "waiting") return;
+      phase = "flee";
+      unlockIntroAudio();
+      await window.NaiPet.fleeIntro();
+      if (!active) return;
+      phase = "billiards";
+      if (!route) { finishBilliards(); return; }
+      raf = requestAnimationFrame(draw);
+    };
+    skip.addEventListener("click", () => { unlockIntroAudio(); finish(false); });
+    document.addEventListener("keydown", onKey, true);
+    window.addEventListener("hashchange", onRoute, { once: true });
+    window.addEventListener("resize", onResize, { once: true });
+    reduced.addEventListener("change", onReducedMotion);
+    petReady.then((ready) => {
+      if (!active) return;
+      if (!ready || !window.NaiPet.prepareIntro(start)) { finish(false); return; }
+      // 等待点击的时间也用于预演物理和加载素材。
+      raf = requestAnimationFrame(() => { if (active) route = precomputeIntro(tiles); });
+    }).catch(() => finish(false));
+  }
+
   async function init() {
     ICONS.hydrate(document);
     el.searchForm = $("searchForm");
@@ -1617,6 +2590,7 @@
     el.randomBtn = $("randomBtn");
     el.roleIntro = $("roleIntro");
     el.sidebarNav = $("sidebarNav");
+    el.sidebarScrollHint = $("sidebarScrollHint");
     el.subTabs = $("subTabs");
     el.tagPanel = $("tagPanel");
     el.grid = $("grid");
@@ -1663,6 +2637,7 @@
     applyRepoLinks();
     previousTheme = storageGet("nai-theme-base") || "naiwa";
     applyTheme(storageGet("nai-theme") || "naiwa");
+    setupSidebarHint();
     if (window.GhImg) {
       window.GhImg.configure({ repo: CONFIG.repo });
       window.GhImg.decorate(document.querySelectorAll(".hero-visual img"));
@@ -1671,29 +2646,34 @@
     bindEvents();
     setupReveal();
     loadStars();
-    startPet();
+    const petReady = startPet();
     el.grid.innerHTML = skeletonMarkup(8);
+    prepareIntroAudio();
+    homeAssetsReady = (async () => {
+      try {
+        const [manifest, tagDimensions] = await Promise.all([
+          fetchJSON(CONFIG.dataBase + "manifest.json"),
+          fetchJSON(CONFIG.tagDimensions)
+        ]);
+        if (!Array.isArray(manifest) || !manifest.length) throw new Error("manifest 为空");
 
-    try {
-      const [manifest, tagDimensions] = await Promise.all([
-        fetchJSON(CONFIG.dataBase + "manifest.json"),
-        fetchJSON(CONFIG.tagDimensions)
-      ]);
-      if (!Array.isArray(manifest) || !manifest.length) throw new Error("manifest 为空");
+        state.manifest = manifest;
+        state.tagDimensions = tagDimensions;
+        const loaded = await Promise.all(manifest.map((meta) => loadChar(meta)));
+        loaded.forEach((data) => state.chars.set(data.meta.id, data));
 
-      state.manifest = manifest;
-      state.tagDimensions = tagDimensions;
-      const loaded = await Promise.all(manifest.map((meta) => loadChar(meta)));
-      loaded.forEach((data) => state.chars.set(data.meta.id, data));
-
-      renderStats();
-      applyRoute();
-    } catch (err) {
-      el.grid.innerHTML = "";
-      el.pagerBottom.hidden = true;
-      el.errorState.hidden = false;
-      el.errorMsg.textContent = "数据加载失败：" + (err && err.message ? err.message : err);
-    }
+        renderStats();
+        applyRoute();
+        if (document.documentElement.classList.contains("home-intro-active")) await prepareHomeAssets();
+      } catch (err) {
+        el.grid.innerHTML = "";
+        el.pagerBottom.hidden = true;
+        el.errorState.hidden = false;
+        el.errorMsg.textContent = "数据加载失败：" + (err && err.message ? err.message : err);
+      }
+    })();
+    setupHomeIntro(petReady);
+    setupSectionNavigation();
   }
 
   document.addEventListener("DOMContentLoaded", init);

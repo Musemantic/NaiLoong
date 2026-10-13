@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="naiwa">
+<html lang="zh-CN" class="home-page" data-theme="naiwa">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,11 +17,16 @@
   <meta name="twitter:card" content="summary">
   <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/style.css">
+  <script>
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches && (!location.hash || location.hash === "#/")) {
+      document.documentElement.classList.add("home-intro-active");
+    }
+  </script>
   <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "b99c4e623f3b48fdb0f42e6d9c97c4c1"}'></script><!-- End Cloudflare Web Analytics -->
 </head>
 <body>
   <div class="naiwa-backdrop" aria-hidden="true">
-    <svg class="naiwa-eye" viewBox="105 235 460 545" focusable="false" xmlns="http://www.w3.org/2000/svg">
+    <svg class="naiwa-eye" viewBox="75 235 490 545" focusable="false" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <clipPath id="naiwaLidA">
           <rect class="naiwa-lid" x="95" y="243" width="480" height="314"></rect>
@@ -119,18 +124,15 @@
     <div class="hero-aurora" aria-hidden="true"></div>
     <div class="container hero-inner">
       <div class="hero-copy">
-        <span class="badge badge-open">
-          <span class="dot" aria-hidden="true"></span>
-          PRs Welcome
-        </span>
-        <h1 class="hero-title">变化永恒，<br><span class="hero-accent">奶龙</span> 助你领先。</h1>
-        <p class="hero-lead">
-          全球首个奶科生物表情包集散地，致力于让优质表情触手可及。<br>
-          参与本开源项目，让你轻松掌握 Git 的使用。
+        <h1 class="hero-title" aria-label="变化永恒，奶龙助你领先。">
+          <span class="hero-title-row" aria-hidden="true"><span data-title-rain>变化永恒，</span></span>
+          <span class="hero-title-row" aria-hidden="true"><span class="hero-accent hero-brand">奶龙</span><span class="hero-title-space"> </span><span data-title-rain>助你领先。</span></span>
+        </h1>
+        <p class="hero-lead" id="heroLead" aria-label="全球首个奶科生物表情包集散地，致力于让优质表情触手可及。参与本开源项目，让你轻松掌握 Git 的使用。">
+          <span class="hero-lead-type" aria-hidden="true">全球首个奶科生物表情包集散地，致力于让优质表情触手可及。<br>参与本开源项目，让你轻松掌握 Git 的使用。</span>
         </p>
         <div class="hero-actions">
           <a class="btn btn-primary" href="#contribute">开始贡献</a>
-          <a class="btn btn-secondary" href="#gallery">浏览表情</a>
           <button class="btn btn-secondary upload-trigger" type="button" data-upload-trigger>
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 1.25a.75.75 0 0 1 .75.75v6.19l1.72-1.72a.75.75 0 1 1 1.06 1.06l-3 3a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06l1.78 1.78V2A.75.75 0 0 1 8 1.25Z"/><path fill="currentColor" d="M2.75 10a.75.75 0 0 1 .75.75v2.5c0 .138.112.25.25.25h8.5a.25.25 0 0 1 .25.25v2.5a1.75 1.75 0 0 1-1.75 1.75h-8.5A1.75 1.75 0 0 1 2 13.25v-2.5a.75.75 0 0 1 .75-.75Z"/></svg>
             <span>上传图片</span>
@@ -154,7 +156,12 @@
   <main id="main" class="container layout" tabindex="-1">
     <aside class="sidebar" aria-label="角色导航">
       <p class="sidebar-title">角色</p>
-      <nav class="sidebar-nav" id="sidebarNav"></nav>
+      <div class="sidebar-nav-shell">
+        <nav class="sidebar-nav" id="sidebarNav"></nav>
+        <button class="sidebar-scroll-hint" id="sidebarScrollHint" type="button" aria-label="向右查看更多角色" title="向右查看更多角色" hidden>
+          <span data-icon="lucide:chevron-right" aria-hidden="true"></span>
+        </button>
+      </div>
       <div class="sidebar-note reveal">
         <p>想加新角色？开个 Issue 写角色名，维护者会给你建数据目录。</p>
         <a class="link" data-repo-link data-repo-suffix="/issues/new" href="#" rel="noopener">提交角色申请 →</a>
@@ -245,6 +252,15 @@
     </div>
   </footer>
 
+  <nav class="section-navigation" id="sectionNavigation" aria-label="板块导航" hidden>
+    <button class="section-arrow" id="sectionPrevious" type="button" aria-label="上一板块" hidden>
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true"><path d="m6 15 6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="section-arrow" id="sectionNext" type="button" aria-label="下一板块" hidden>
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </nav>
+
   <dialog class="image-dialog" id="imageDialog" aria-labelledby="imageDialogTitle">
     <div class="image-dialog-content">
       <div class="image-dialog-head">
@@ -309,6 +325,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <noscript>
+    <style>html.home-intro-active body > * { visibility: visible !important; } html.home-intro-active, html.home-intro-active body { overflow: auto; }</style>
     <div class="noscript">本站需要启用 JavaScript 才能渲染表情数据。</div>
   </noscript>
 

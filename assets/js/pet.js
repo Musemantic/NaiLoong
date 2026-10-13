@@ -54,6 +54,7 @@
   let sleepTimer = 0;
   let bubbleTimer = 0;
   let menu = null;
+  let intro = null;
 
   function prefersReducedMotion() {
     return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -135,6 +136,7 @@
     if (!node) return;
     node.style.transform = "translate3d(" + Math.round(x) + "px," + Math.round(-y) + "px,0)";
     positionBubble();
+    document.dispatchEvent(new CustomEvent("pet-position", { detail: { x, y, width: cellW, height: cellH, hidden: node.hidden } }));
   }
 
   function positionBubble() {
@@ -192,7 +194,11 @@
     const dt = Math.min(0.05, (now - lastTick) / 1000 || 0);
     lastTick = now;
     const size = viewport().height;
-    advanceFrame(dt * 1000);
+    advanceFrame(dt * 1000 * (intro && intro.phase === "flee" ? 2.8 : 1));
+    if (intro) {
+      tickIntro(dt);
+      return;
+    }
 
     if (state === "fall") {
       velocity.y -= FALL_GRAVITY * dt;
@@ -271,7 +277,7 @@
     if (state === "sleep") setState("idle", 1600);
     if (!sleepTimer) {
       sleepTimer = window.setInterval(() => {
-        if (Date.now() - lastTouch > SLEEP_AFTER && !drag && state === "idle") setState("sleep", 0);
+        if (!intro && Date.now() - lastTouch > SLEEP_AFTER && !drag && state === "idle") setState("sleep", 0);
       }, 3000);
     }
   }
@@ -300,9 +306,12 @@
       return;
     }
     const line = lines[Math.floor(Math.random() * lines.length)];
-    setState("talk", 1700);
+    const cheer = line.src === config.cheerSrc;
+    setState(cheer ? "cheer" : "talk", cheer ? 0 : 1700);
     showBubble(line.text || "");
-    if (typeof config.play === "function") config.play(line.src);
+    if (typeof config.play === "function") config.play(line.src, () => {
+      if (cheer && state === "cheer") setState("idle", 1200);
+    });
   }
 
   function beginDrag(event) {
@@ -440,6 +449,7 @@
     } catch (err) {
     }
     if (node) node.hidden = true;
+    applyTransform();
     closeMenu();
     if (frameId) {
       window.cancelAnimationFrame(frameId);
@@ -455,6 +465,7 @@
     }
     if (!node) return;
     node.hidden = false;
+    applyTransform();
     if (!frameId) {
       lastTick = performance.now();
       frameId = window.requestAnimationFrame(tick);
@@ -464,6 +475,108 @@
 
   function isHidden() {
     return !node || node.hidden;
+  }
+
+  function resizeSprite(height) {
+    cellH = height;
+    cellW = Math.round(cellH * (Number(config.frameWidth) || 192) / (Number(config.frameHeight) || 208));
+    node.style.setProperty("--pet-h", cellH + "px");
+    node.style.setProperty("--pet-w", cellW + "px");
+    paintFrame();
+  }
+
+  function prepareIntro(onStart) {
+    if (!node) return false;
+    intro = { phase: "waiting", elapsed: 0, normalSize: cellH, wasHidden: node.hidden, onStart };
+    node.hidden = false;
+    node.classList.add("is-intro-pet");
+    node.style.zIndex = "10000";
+    node.setAttribute("aria-label", "戳一戳，开始浏览奶-hub");
+    resizeSprite(Math.round(Math.min(260, Math.max(180, Math.min(viewport().width * 0.5, viewport().height * 0.32)))));
+    x = (viewport().width - cellW) / 2;
+    y = (viewport().height - cellH) / 2;
+    setState("sleep", 0);
+    bubble.textContent = "戳一戳";
+    bubble.hidden = false;
+    bubble.classList.add("is-on");
+    applyTransform();
+    if (!frameId) {
+      lastTick = performance.now();
+      frameId = requestAnimationFrame(tick);
+    }
+    return true;
+  }
+
+  function fleeIntro() {
+    if (!intro) return Promise.resolve();
+    intro.phase = "flee";
+    intro.elapsed = 0;
+    bubble.hidden = true;
+    node.tabIndex = -1;
+    setState("walk-right", 0);
+    return new Promise((resolve) => { intro.resolve = resolve; });
+  }
+
+  function returnIntro(onCheer) {
+    if (!intro) return Promise.resolve();
+    resizeSprite(intro.normalSize);
+    x = viewport().width + cellW;
+    y = 0;
+    node.hidden = false;
+    node.style.zIndex = String(Z_INDEX);
+    intro.phase = "return";
+    intro.elapsed = 0;
+    intro.target = Math.max(8, viewport().width - cellW - Math.max(70, viewport().width * 0.17));
+    intro.onCheer = onCheer;
+    setState("walk-left", 0);
+    applyTransform();
+    return new Promise((resolve) => { intro.resolve = resolve; });
+  }
+
+  function cancelIntro() {
+    if (!intro || !node) return;
+    const previous = intro;
+    intro = null;
+    resizeSprite(previous.normalSize);
+    node.classList.remove("is-intro-pet");
+    node.style.zIndex = String(Z_INDEX);
+    node.setAttribute("aria-label", "奶蛙桌宠，按 Enter 让它说一句话，按住可以拖动");
+    node.tabIndex = paused ? -1 : 0;
+    bubble.hidden = true;
+    x = clampX(x);
+    y = 0;
+    node.hidden = previous.wasHidden;
+    setState("idle", 2000);
+    wake();
+    applyTransform();
+    if (previous.resolve) previous.resolve();
+  }
+
+  function tickIntro(dt) {
+    intro.elapsed += dt;
+    if (intro.phase === "flee") {
+      // 短暂惊醒后加速逃走，保持行走素材的真实朝向。
+      if (intro.elapsed > 0.14) x += Math.min(1800, 420 + (intro.elapsed - 0.14) * 2600) * dt;
+      if (x > viewport().width + cellW) {
+        intro.phase = "away";
+        node.hidden = true;
+        const resolve = intro.resolve;
+        intro.resolve = null;
+        if (resolve) resolve();
+      }
+      applyTransform();
+    } else if (intro.phase === "return") {
+      x = Math.max(intro.target, x - Math.max(220, viewport().width * 0.24) * dt);
+      applyTransform();
+      if (x <= intro.target) {
+        intro.phase = "cheer";
+        intro.elapsed = 0;
+        setState("cheer", 0);
+        if (intro.onCheer) intro.onCheer();
+      }
+    } else if (intro.phase === "cheer" && intro.elapsed >= 15) {
+      cancelIntro();
+    }
   }
 
   function build() {
@@ -502,6 +615,7 @@
     paintFrame();
 
     node.addEventListener("pointerdown", (event) => {
+      if (intro) return;
       if (event.button !== 0 && event.pointerType === "mouse") return;
       wake();
       closeMenu();
@@ -512,16 +626,25 @@
     node.addEventListener("pointercancel", endDrag);
     node.addEventListener("lostpointercapture", endDrag);
     node.addEventListener("dblclick", () => {
+      if (intro) return;
       wake();
       setState("cheer", 1800);
     });
     node.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (intro) return;
       wake();
       openMenu(event);
     });
     node.addEventListener("keydown", (event) => {
+      if (intro) {
+        if (intro.phase === "waiting" && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          intro.onStart();
+        }
+        return;
+      }
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         wake();
@@ -538,8 +661,12 @@
         setState("walk-right", 1200);
       }
     });
+    node.addEventListener("click", () => {
+      if (intro && intro.phase === "waiting") intro.onStart();
+    });
     window.addEventListener("resize", () => {
       if (!node) return;
+      if (intro) return;
       x = clampX(x);
       y = Math.min(y, Math.max(0, viewport().height - node.offsetHeight));
       applyTransform();
@@ -602,6 +729,7 @@
     node = sprite = bubble = null;
     closeMenu();
     running = false;
+    intro = null;
   }
 
   function setPaused(value) {
@@ -624,6 +752,10 @@
     show: show,
     hide: hide,
     setPaused: setPaused,
-    isHidden: isHidden
+    isHidden: isHidden,
+    prepareIntro: prepareIntro,
+    fleeIntro: fleeIntro,
+    returnIntro: returnIntro,
+    cancelIntro: cancelIntro
   };
 })();
