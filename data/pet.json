@@ -3,7 +3,7 @@
   "frameWidth": 192,
   "frameHeight": 208,
   "columns": 8,
-  "rows": 9,
+  "rows": 10,
   "size": 104,
   "animations": [
     { "id": "idle", "row": 0, "durations": [280, 110, 110, 140, 140, 320] },
@@ -15,6 +15,7 @@
     { "id": "sleep", "row": 5, "durations": [140, 140, 140, 140, 140, 140, 140, 240] },
     { "id": "wait", "row": 6, "durations": [150, 150, 150, 150, 150, 260] },
     { "id": "run", "row": 7, "durations": [120, 120, 120, 120, 120, 220] },
-    { "id": "review", "row": 8, "durations": [150, 150, 150, 150, 150, 280] }
+    { "id": "review", "row": 8, "durations": [150, 150, 150, 150, 150, 280] },
+    { "id": "fear", "row": 9, "durations": [110, 110, 110, 110, 110, 110, 110, 130] }
   ]
 }

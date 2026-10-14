@@ -14,6 +14,7 @@
   const DEFAULT_PAGE_SIZE = 8;
   const STAGGER_CAP = 14;
   const INTRO_SFX_VOLUME = 2.5; // 1 为基准
+  const INTRO_FEAR = { src: "assets/audio/hola_ganbadie.mp3", duration: 0.9 };
   const MAX_UPLOAD_FILES = 10;
   const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
   const UPLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/gif"]);
@@ -41,6 +42,7 @@
   let voiceAudioSrc = "";
   let voicePlaying = "";
   let voiceSource = null;
+  let voiceStopTimer = 0;
   let voiceRequest = 0;
   let voiceEnded = null;
   const voiceBuffers = new Map();
@@ -533,13 +535,14 @@
     return out;
   }
 
-  function imageCardData(url, title) {
+  function imageCardData(url, title, tags) {
     const source = window.GhImg && window.GhImg.sourceDetails
       ? window.GhImg.sourceDetails(url)
       : null;
     return {
       originalUrl: window.GhImg ? window.GhImg.link(url) : url,
       imageTitle: title || "原图",
+      imageTags: JSON.stringify(Array.isArray(tags) ? tags : []),
       sourceOwner: source ? source.owner : "",
       sourceOwnerUrl: source ? source.profileUrl : "",
       sourceFile: source ? source.url : ""
@@ -559,14 +562,12 @@
       ? item.url
       : CONFIG.fallback;
     const src = esc(preview || localFallback);
-    const cardData = imageCardData(item.url, item.title);
-    const link = esc(cardData.originalUrl);
-    const tags = window.MemeSearch.labelsOf(
+    const labels = window.MemeSearch.labelsOf(
       window.MemeSearch.resolveRawTags(item.tags, currentChar().tagIndex),
       currentChar().tagIndex
-    )
-      .map((label) => '<span class="tag">' + esc(label) + "</span>")
-      .join("");
+    );
+    const cardData = imageCardData(item.url, item.title, labels);
+    const link = esc(cardData.originalUrl);
 
     return (
       '<article class="card" style="--i:' +
@@ -575,6 +576,8 @@
       link +
       '" data-image-title="' +
       esc(item.title) +
+      '" data-image-tags="' +
+      esc(cardData.imageTags) +
       '" data-source-owner="' +
       esc(cardData.sourceOwner) +
       '" data-source-owner-url="' +
@@ -605,7 +608,6 @@
       '" download title="下载原图" aria-label="下载原图">' +
       ICON_DOWNLOAD +
       "</a></div>" +
-      (tags ? '<div class="card-tags">' + tags + "</div>" : "") +
       "</div></article>"
     );
   }
@@ -1073,6 +1075,21 @@
     const sourceOwner = card.dataset.sourceOwner || "";
     const image = el.imageDialogImage;
     el.imageDialogTitle.textContent = name;
+    let tags = [];
+    try {
+      const parsedTags = JSON.parse(card.dataset.imageTags || "[]");
+      if (Array.isArray(parsedTags)) tags = parsedTags.filter((tag) => typeof tag === "string");
+    } catch (err) {
+      tags = [];
+    }
+    el.imageDialogTags.replaceChildren();
+    tags.forEach((label) => {
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = label;
+      el.imageDialogTags.appendChild(tag);
+    });
+    el.imageDialogTags.hidden = !tags.length;
     el.imageDialogOwner.textContent = sourceOwner;
     el.imageDialogOwner.href = card.dataset.sourceOwnerUrl || "#";
     el.imageDialogOwner.hidden = !sourceOwner;
@@ -1107,7 +1124,8 @@
       return;
     }
     const row = list[Math.floor(Math.random() * list.length)];
-    const card = { dataset: imageCardData(row.item.url, row.item.title) };
+    const labels = window.MemeSearch.labelsOf(row.tags, char.tagIndex);
+    const card = { dataset: imageCardData(row.item.url, row.item.title, labels) };
     showOriginalImage(card);
   }
 
@@ -1311,6 +1329,7 @@
       animations: pet.animations,
       size: Math.round((Number(pet.size) || 104) * (narrow ? 0.9 : 1)),
       cheerSrc: EASTER_EGG.fallbackSrc,
+      stopVoice: stopVoice,
       // 台词跟着当前角色走：奶蛙页说奶蛙话，奶蛋页只会“安~迪~”。
       lines: voiceSources,
       play: playVoiceSrc,
@@ -1328,6 +1347,8 @@
 
   function stopVoice() {
     voiceRequest += 1;
+    clearTimeout(voiceStopTimer);
+    voiceStopTimer = 0;
     voicePlaying = "";
     if (voiceSource) {
       try { voiceSource.stop(); } catch (err) {}
@@ -1377,13 +1398,14 @@
     return ready;
   }
 
-  async function playVoiceSrc(src, onEnded) {
+  async function playVoiceSrc(src, onEnded, duration) {
     if (!src || typeof Audio !== "function") {
       if (typeof onEnded === "function") onEnded();
       return false;
     }
     stopVoice();
     const request = voiceRequest;
+    const segmentDuration = Number(duration) > 0 ? Number(duration) : 0;
     voicePlaying = src;
     voiceEnded = typeof onEnded === "function" ? onEnded : null;
     resumeIntroAudio();
@@ -1412,7 +1434,8 @@
           complete();
         }
       };
-      source.start();
+      if (segmentDuration) source.start(0, 0, Math.min(segmentDuration, buffer.duration));
+      else source.start();
       return true;
     }
     if (voiceAudioSrc !== src) {
@@ -1429,6 +1452,11 @@
     try {
       voiceAudio.currentTime = 0;
       await voiceAudio.play();
+      if (segmentDuration && request === voiceRequest) {
+        voiceStopTimer = window.setTimeout(() => {
+          if (request === voiceRequest) stopVoice();
+        }, segmentDuration * 1000);
+      }
       return true;
     } catch (err) {
       if (voicePlaying === src) {
@@ -2280,7 +2308,7 @@
   }
 
   function prepareIntroAudio() {
-    return preloadVoice(EASTER_EGG.fallbackSrc);
+    return Promise.all([preloadVoice(EASTER_EGG.fallbackSrc), preloadVoice(INTRO_FEAR.src)]);
   }
 
   function playIntroLaugh() {
@@ -2367,10 +2395,8 @@
       characters.forEach((character, index) => {
         setTimeout(() => {
           character.classList.add("is-shown");
-          const rect = character.getBoundingClientRect();
-          const origin = lead.getBoundingClientRect();
-          caret.style.left = rect.right - origin.left + 1.5 + "px";
-          caret.style.top = rect.top - origin.top + Math.max(0, (rect.height - caret.offsetHeight) / 2) + "px";
+          if (caret && character.isConnected) character.insertAdjacentElement("afterend", caret);
+          else if (caret) caret.hidden = true;
           playIntroTypeTick(character.textContent);
         }, index * 30);
       });
@@ -2430,6 +2456,9 @@
     const copy = document.querySelector(".hero-copy");
     const tiles = visual ? Array.from(visual.querySelectorAll(".hero-tile")) : [];
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const homeVisits = Math.max(0, Number(storageGet("nai-home-visits")) || 0);
+    const showSkip = homeVisits > 0;
+    storageSet("nai-home-visits", String(homeVisits + 1));
     const finishWithoutMotion = () => {
       document.documentElement.classList.remove("home-intro-active");
       if (visual) visual.classList.add("is-finished");
@@ -2452,11 +2481,13 @@
       visual.appendChild(cue);
       return cue;
     });
-    const skip = document.createElement("button");
-    skip.className = "intro-skip";
-    skip.type = "button";
-    skip.textContent = "跳过开场";
-    document.body.appendChild(skip);
+    const skip = showSkip ? document.createElement("button") : null;
+    if (skip) {
+      skip.className = "intro-skip";
+      skip.type = "button";
+      skip.textContent = "跳过开场";
+      document.body.appendChild(skip);
+    }
     const inertNodes = Array.from(document.body.children).filter((node) => node !== skip && node.id !== "naiPet" && !["SCRIPT", "STYLE"].includes(node.tagName));
     const previousInert = inertNodes.map((node) => node.inert);
     inertNodes.forEach((node) => { node.inert = true; });
@@ -2473,7 +2504,7 @@
       if (event.key === "Escape") {
         event.preventDefault();
         finish(false);
-      } else if (event.key === "Tab") {
+      } else if (event.key === "Tab" && skip) {
         const pet = $("naiPet");
         const focusable = phase === "waiting" && pet && !pet.hidden ? [pet, skip] : [skip];
         const index = focusable.indexOf(document.activeElement);
@@ -2503,7 +2534,7 @@
       visual.classList.add("is-finished");
       hero.classList.add("hero-no-visual");
       cues.forEach((cue) => cue.remove());
-      skip.remove();
+      if (skip) skip.remove();
       tiles.forEach((tile) => {
         tile.style.removeProperty("transform");
         tile.style.removeProperty("opacity");
@@ -2562,15 +2593,21 @@
 
     const start = async () => {
       if (!active || phase !== "waiting") return;
-      phase = "flee";
+      phase = "fear";
       unlockIntroAudio();
+      await preloadVoice(INTRO_FEAR.src);
+      if (!active) return;
+      playVoiceSrc(INTRO_FEAR.src, null, INTRO_FEAR.duration).catch(() => {});
+      await window.NaiPet.fearIntro();
+      if (!active) return;
+      phase = "flee";
       await window.NaiPet.fleeIntro();
       if (!active) return;
       phase = "billiards";
       if (!route) { finishBilliards(); return; }
       raf = requestAnimationFrame(draw);
     };
-    skip.addEventListener("click", () => { unlockIntroAudio(); finish(false); });
+    if (skip) skip.addEventListener("click", () => { unlockIntroAudio(); finish(false); });
     document.addEventListener("keydown", onKey, true);
     window.addEventListener("hashchange", onRoute, { once: true });
     window.addEventListener("resize", onResize, { once: true });
@@ -2622,6 +2659,7 @@
     el.uploadCancel = $("uploadCancel");
     el.imageDialog = $("imageDialog");
     el.imageDialogTitle = $("imageDialogTitle");
+    el.imageDialogTags = $("imageDialogTags");
     el.imageDialogSource = $("imageDialogSource");
     el.imageDialogOwner = $("imageDialogOwner");
     el.imageDialogSourceLink = $("imageDialogSourceLink");

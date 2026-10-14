@@ -194,7 +194,9 @@
     const dt = Math.min(0.05, (now - lastTick) / 1000 || 0);
     lastTick = now;
     const size = viewport().height;
-    advanceFrame(dt * 1000 * (intro && intro.phase === "flee" ? 2.8 : 1));
+    if (!(intro && intro.phase === "pause")) {
+      advanceFrame(dt * 1000 * (intro && intro.phase === "flee" ? 2.8 : 1));
+    }
     if (intro) {
       tickIntro(dt);
       return;
@@ -517,6 +519,20 @@
     return new Promise((resolve) => { intro.resolve = resolve; });
   }
 
+  function fearIntro() {
+    if (!intro) return Promise.resolve();
+    const fear = animationFor("fear");
+    if (!fear) return Promise.resolve();
+    intro.phase = "fear";
+    intro.elapsed = 0;
+    intro.fearDuration = fear.durations.reduce((total, duration) => total + duration, 0);
+    intro.pauseDuration = 280;
+    bubble.hidden = true;
+    node.tabIndex = -1;
+    setState("fear", 0);
+    return new Promise((resolve) => { intro.resolve = resolve; });
+  }
+
   function returnIntro(onCheer) {
     if (!intro) return Promise.resolve();
     resizeSprite(intro.normalSize);
@@ -537,6 +553,7 @@
     if (!intro || !node) return;
     const previous = intro;
     intro = null;
+    if ((previous.phase === "fear" || previous.phase === "pause" || previous.phase === "cheer") && typeof config.stopVoice === "function") config.stopVoice();
     resizeSprite(previous.normalSize);
     node.classList.remove("is-intro-pet");
     node.style.zIndex = String(Z_INDEX);
@@ -554,8 +571,19 @@
 
   function tickIntro(dt) {
     intro.elapsed += dt;
-    if (intro.phase === "flee") {
-      // 短暂惊醒后加速逃走，保持行走素材的真实朝向。
+    if (intro.phase === "fear" && intro.elapsed >= intro.fearDuration / 1000) {
+      intro.phase = "pause";
+      intro.elapsed = 0;
+      frameIndex = Math.max(0, (anim.durations || []).length - 1);
+      frameElapsed = 0;
+      paintFrame();
+    } else if (intro.phase === "pause" && intro.elapsed >= intro.pauseDuration / 1000) {
+      intro.phase = "fear-ready";
+      const resolve = intro.resolve;
+      intro.resolve = null;
+      if (resolve) resolve();
+    } else if (intro.phase === "flee") {
+      // 惊恐和短暂停顿结束后加速逃走，保持行走素材的真实朝向。
       if (intro.elapsed > 0.14) x += Math.min(1800, 420 + (intro.elapsed - 0.14) * 2600) * dt;
       if (x > viewport().width + cellW) {
         intro.phase = "away";
@@ -663,6 +691,7 @@
     });
     node.addEventListener("click", () => {
       if (intro && intro.phase === "waiting") intro.onStart();
+      else if (intro && intro.phase === "cheer") cancelIntro();
     });
     window.addEventListener("resize", () => {
       if (!node) return;
@@ -754,6 +783,7 @@
     setPaused: setPaused,
     isHidden: isHidden,
     prepareIntro: prepareIntro,
+    fearIntro: fearIntro,
     fleeIntro: fleeIntro,
     returnIntro: returnIntro,
     cancelIntro: cancelIntro
