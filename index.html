@@ -107,7 +107,7 @@
         </a>
         <button class="mobile-nav-upload" type="button" data-upload-trigger>
           <span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M8 10V2.5m0 0L5.25 5.25M8 2.5l2.75 2.75M3 9.5v3.75h10V9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-          <span>上传图片</span>
+          <span>上传表情</span>
         </button>
         <button class="mobile-nav-toggle" type="button" data-naiwa-toggle aria-pressed="false">
           <span class="mobile-nav-icon" data-icon="lucide-lab:frog-face" aria-hidden="true"></span>
@@ -136,7 +136,7 @@
           <a class="btn btn-primary" href="#contribute">开始贡献</a>
           <button class="btn btn-secondary upload-trigger" type="button" data-upload-trigger>
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 1.25a.75.75 0 0 1 .75.75v6.19l1.72-1.72a.75.75 0 1 1 1.06 1.06l-3 3a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06l1.78 1.78V2A.75.75 0 0 1 8 1.25Z"/><path fill="currentColor" d="M2.75 10a.75.75 0 0 1 .75.75v2.5c0 .138.112.25.25.25h8.5a.25.25 0 0 1 .25.25v2.5a1.75 1.75 0 0 1-1.75 1.75h-8.5A1.75 1.75 0 0 1 2 13.25v-2.5a.75.75 0 0 1 .75-.75Z"/></svg>
-            <span>上传图片</span>
+            <span>上传表情</span>
           </button>
         </div>
         <dl class="hero-stats">
@@ -292,8 +292,8 @@
     <div class="upload-dialog-content">
       <div class="upload-dialog-head">
         <div>
-          <h2 class="upload-dialog-title" id="uploadDialogTitle">上传图片</h2>
-          <p class="upload-dialog-subtitle">支持 JPG、PNG 或 GIF，单张不超过 5 MB，最多选择 10 张。</p>
+          <h2 class="upload-dialog-title" id="uploadDialogTitle">上传表情</h2>
+          <p class="upload-dialog-subtitle">可上传动图或静态图，单张图片不超过 5 MB，一次最多选择 10 张。</p>
         </div>
         <button class="btn btn-ghost icon-btn upload-dialog-close" id="uploadDialogClose" type="button" aria-label="关闭上传窗口" title="关闭上传窗口">
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 1 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></svg>
@@ -305,7 +305,7 @@
           <span>选择图片</span>
         </button>
         <input id="uploadInput" type="file" accept=".jpg,.jpeg,.png,.gif,image/jpeg,image/png,image/gif" aria-label="选择待上传图片" multiple hidden>
-        <p class="upload-selection" id="uploadSelection" role="status">尚未选择图片</p>
+        <p class="upload-selection" id="uploadSelection" role="status">支持JPEG、PNG、GIF格式</p>
         <ul class="upload-list" id="uploadList" aria-label="待上传图片"></ul>
         <div class="upload-progress" aria-live="polite">
           <div class="upload-progress-head">

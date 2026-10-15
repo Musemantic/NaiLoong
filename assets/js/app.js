@@ -192,7 +192,7 @@
     el.uploadSelection.classList.toggle("is-error", invalid);
     el.uploadSelection.textContent = entries.length
       ? "已选择 " + entries.length + " / " + MAX_UPLOAD_FILES + " 张" + (invalid ? "，请移除不符合要求的图片。" : "")
-      : "尚未选择图片";
+      : "支持JPG、PNG、GIF格式";
   }
 
   function setUploadProgress(percent, processed, total, message) {
