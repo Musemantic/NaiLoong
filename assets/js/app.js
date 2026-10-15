@@ -65,8 +65,6 @@
   const FALLBACK_ICON = "tabler:baby-bottle";
   // icons.js 没加载时按空图标处理，页面其余功能不受影响。
   const ICONS = window.NaiIcons || { svg: () => "", markup: () => "", hydrate: () => {} };
-  let previousTheme = "auto";
-
   const EASTER_EGG = {
     fallbackSrc: "assets/audio/nailong_laugh.mp3",
     chance: 0.25,
@@ -1147,10 +1145,6 @@
 
   function applyTheme(mode) {
     const theme = THEME_NAMES[mode] ? mode : "auto";
-    if (theme !== "naiwa") {
-      previousTheme = theme;
-      storageSet("nai-theme-base", theme);
-    }
     document.documentElement.dataset.theme = theme;
     storageSet("nai-theme", theme);
     el.themeIcon.innerHTML = ICONS.svg(THEME_ICONS[theme], 18);
@@ -1168,8 +1162,8 @@
 
   function toggleNaiwaTheme() {
     if (document.documentElement.dataset.theme === "naiwa") {
-      applyTheme(previousTheme);
-      toast("已切换主题：" + THEME_NAMES[previousTheme]);
+      applyTheme("auto");
+      toast("已切换主题：" + THEME_NAMES.auto);
     } else {
       applyTheme("naiwa");
       toast("已切换主题：奶蛙");
@@ -1798,12 +1792,15 @@
       scheduled = false;
       if (document.documentElement.classList.contains("home-intro-active")) { nav.hidden = true; return; }
       const offset = headerHeight();
-      const tops = sections.map((section) => section.getBoundingClientRect().top);
-      current = tops[2] <= offset + 80 ? 2 : tops[1] <= offset + 80 ? 1 : 0;
-      const nearStart = tops[current] > offset - window.innerHeight * 0.45;
-      const nearEnd = current < 2 && tops[current + 1] < window.innerHeight * 1.15;
-      previous.hidden = current === 0 || (current === 1 && !nearStart);
-      next.hidden = current === 2 || (current === 1 && !nearEnd);
+      const viewportHeight = Math.max(1, window.innerHeight - offset);
+      const visibleRatios = sections.map((section) => {
+        const rect = section.getBoundingClientRect();
+        const visibleHeight = Math.max(0, Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, offset));
+        return visibleHeight / viewportHeight;
+      });
+      current = visibleRatios.reduce((best, ratio, index) => ratio > visibleRatios[best] ? index : best, 0);
+      previous.hidden = current === 0;
+      next.hidden = current === 2;
       nav.hidden = previous.hidden && next.hidden;
       if (!nav.hidden) {
         const rect = nav.getBoundingClientRect();
@@ -2673,7 +2670,6 @@
     if (PAGE_SIZES.includes(storedSize)) state.pageSize = storedSize;
 
     applyRepoLinks();
-    previousTheme = storageGet("nai-theme-base") || "naiwa";
     applyTheme(storageGet("nai-theme") || "naiwa");
     setupSidebarHint();
     if (window.GhImg) {

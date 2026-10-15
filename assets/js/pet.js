@@ -7,8 +7,14 @@
   const WALK_SPEED = [60, 130];
   const RUN_SPEED = [200, 300];
   const FALL_GRAVITY = 2200;
-  const BOUNCE_DAMP = 0.42;
-  const FRICTION = 0.72;
+  const FLOOR_RESTITUTION = 0.48;
+  const WALL_RESTITUTION = 0.38;
+  const FLOOR_FRICTION = 0.34;
+  const AIR_DRAG = 0.12;
+  const ROLL_DRAG = 2.8;
+  const ANGULAR_DRAG = 1.7;
+  const UPRIGHT_STRENGTH = 12;
+  const UPRIGHT_DAMPING = 4.5;
   const MIN_THROW_SPEED = 240;
   const SLEEP_AFTER = 45000;
   const CLICK_SLOP = 6;
@@ -46,6 +52,10 @@
   let y = 0;
   let facing = 1;
   let velocity = { x: 0, y: 0 };
+  let rotation = 0;
+  let angularVelocity = 0;
+  let falling = false;
+  let frameHulls = null;
   let drag = null;
   let frameId = 0;
   let lastTick = 0;
@@ -62,6 +72,81 @@
 
   function groundY() {
     return 0;
+  }
+
+  function floorClearance(angle) {
+    const hull = anim && frameHulls && frameHulls[anim.row] && frameHulls[anim.row][frameIndex];
+    if (!hull || !hull.length) {
+      const cosine = Math.cos(angle);
+      const sine = Math.sin(angle);
+      return Math.max(0, Math.abs(sine) * cellW / 2 + Math.max(0, -cellH * cosine));
+    }
+    const frameWidth = Number(config.frameWidth) || 192;
+    const frameHeight = Number(config.frameHeight) || 208;
+    const scaleX = cellW / frameWidth;
+    const scaleY = cellH / frameHeight;
+    const scale = sprite && sprite.classList.contains("is-squash") ? 1.14 : 1;
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+    let lowest = Infinity;
+    hull.forEach((point) => {
+      const px = (point.x - frameWidth / 2) * scaleX * scale;
+      const py = (frameHeight - point.y) * scaleY * scale;
+      lowest = Math.min(lowest, -sine * px + cosine * py);
+    });
+    return Math.max(0, -lowest);
+  }
+
+  function convexHull(points) {
+    points.sort((a, b) => a.x - b.x || a.y - b.y);
+    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    const lower = [];
+    points.forEach((point) => {
+      while (lower.length > 1 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
+      lower.push(point);
+    });
+    const upper = [];
+    for (let i = points.length - 1; i >= 0; i -= 1) {
+      const point = points[i];
+      while (upper.length > 1 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
+      upper.push(point);
+    }
+    lower.pop();
+    upper.pop();
+    return lower.concat(upper);
+  }
+
+  function loadFrameHulls(image) {
+    const frameWidth = Number(config.frameWidth) || 192;
+    const frameHeight = Number(config.frameHeight) || 208;
+    const columns = Number(config.columns) || 8;
+    const rows = Number(config.rows) || 9;
+    const canvas = document.createElement("canvas");
+    canvas.width = frameWidth;
+    canvas.height = frameHeight;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return;
+    frameHulls = [];
+    for (let row = 0; row < rows; row += 1) {
+      frameHulls[row] = [];
+      for (let col = 0; col < columns; col += 1) {
+        context.clearRect(0, 0, frameWidth, frameHeight);
+        context.drawImage(image, col * frameWidth, row * frameHeight, frameWidth, frameHeight, 0, 0, frameWidth, frameHeight);
+        const pixels = context.getImageData(0, 0, frameWidth, frameHeight).data;
+        const points = [];
+        for (let py = 0; py < frameHeight; py += 1) {
+          let px = 0;
+          while (px < frameWidth) {
+            while (px < frameWidth && pixels[(py * frameWidth + px) * 4 + 3] < 16) px += 1;
+            if (px >= frameWidth) break;
+            const start = px;
+            while (px < frameWidth && pixels[(py * frameWidth + px) * 4 + 3] >= 16) px += 1;
+            points.push({ x: start, y: py }, { x: px, y: py }, { x: start, y: py + 1 }, { x: px, y: py + 1 });
+          }
+        }
+        frameHulls[row][col] = points.length ? convexHull(points) : [];
+      }
+    }
   }
 
   function viewport() {
@@ -101,10 +186,18 @@
 
   function advanceFrame(ms) {
     if (!anim || !anim.durations || anim.durations.length < 2) return;
+    if (state === "fear" && frameIndex === anim.durations.length - 1) {
+      frameElapsed = 0;
+      return;
+    }
     frameElapsed += ms;
     let guard = 0;
     while (frameElapsed >= (anim.durations[frameIndex] || 120) && guard++ < 60) {
       frameElapsed -= anim.durations[frameIndex] || 120;
+      if (state === "fear" && frameIndex === anim.durations.length - 1) {
+        frameElapsed = 0;
+        break;
+      }
       frameIndex = (frameIndex + 1) % anim.durations.length;
     }
     paintFrame();
@@ -134,7 +227,8 @@
 
   function applyTransform() {
     if (!node) return;
-    node.style.transform = "translate3d(" + Math.round(x) + "px," + Math.round(-y) + "px,0)";
+    node.style.transform = "translate3d(" + Math.round(x) + "px," + -y + "px,0)";
+    sprite.style.rotate = rotation + "rad";
     positionBubble();
     document.dispatchEvent(new CustomEvent("pet-position", { detail: { x, y, width: cellW, height: cellH, hidden: node.hidden } }));
   }
@@ -202,30 +296,49 @@
       return;
     }
 
-    if (state === "fall") {
+    if (falling) {
       velocity.y -= FALL_GRAVITY * dt;
       x += velocity.x * dt;
       y += velocity.y * dt;
+      velocity.x *= Math.exp(-AIR_DRAG * dt);
+      angularVelocity += (-UPRIGHT_STRENGTH * Math.sin(rotation) - UPRIGHT_DAMPING * angularVelocity) * dt;
+      rotation += angularVelocity * dt;
       const limit = Math.max(0, viewport().width - petWidth() - 8);
       if (x < 4) {
         x = 4;
-        velocity.x = Math.abs(velocity.x) * BOUNCE_DAMP;
+        velocity.x = Math.abs(velocity.x) * WALL_RESTITUTION;
+        angularVelocity += velocity.y / Math.max(1, cellH) * 0.12;
       } else if (x > limit) {
         x = limit;
-        velocity.x = -Math.abs(velocity.x) * BOUNCE_DAMP;
+        velocity.x = -Math.abs(velocity.x) * WALL_RESTITUTION;
+        angularVelocity -= velocity.y / Math.max(1, cellH) * 0.12;
       }
-      if (y <= groundY()) {
-        y = groundY();
-        if (Math.abs(velocity.y) > 160) {
-          velocity.y = -velocity.y * BOUNCE_DAMP;
-          velocity.x *= FRICTION;
+      const floor = floorClearance(rotation);
+      if (y <= floor) {
+        y = floor;
+        if (velocity.y < -95) {
+          const impact = -velocity.y;
+          velocity.y = impact * FLOOR_RESTITUTION;
+          const radius = Math.max(1, cellH * 0.42);
+          const slip = velocity.x - angularVelocity * radius;
+          const impulse = slip * FLOOR_FRICTION;
+          velocity.x -= impulse;
+          angularVelocity += impulse / radius;
           squash();
-        } else if (Math.abs(velocity.x) > 24) {
+        } else if (Math.abs(velocity.x) > 10 || Math.abs(angularVelocity) > 0.25) {
           velocity.y = 0;
-          velocity.x *= Math.pow(FRICTION, dt * 6);
+          const rolling = velocity.x - angularVelocity * Math.max(1, cellH * 0.42);
+          velocity.x -= rolling * Math.min(1, FLOOR_FRICTION * dt * 12);
+          angularVelocity += rolling / Math.max(1, cellH * 0.42) * Math.min(1, FLOOR_FRICTION * dt * 12);
+          velocity.x *= Math.exp(-ROLL_DRAG * dt);
+          angularVelocity *= Math.exp(-ANGULAR_DRAG * dt);
         } else {
           velocity.x = 0;
           velocity.y = 0;
+          angularVelocity = 0;
+          rotation = 0;
+          y = groundY();
+          falling = false;
           node.classList.remove("is-airborne");
           setState("idle", 1200);
         }
@@ -236,6 +349,7 @@
         y = groundY();
         velocity.y = 0;
       }
+      if (y <= floorClearance(rotation) && Math.abs(velocity.y) < 1) node.classList.remove("is-airborne");
       applyTransform();
       return;
     }
@@ -267,11 +381,12 @@
   }
 
   function squash() {
-    if (reducedMotion || !node) return;
-    node.classList.remove("is-squash");
-    void node.offsetWidth;
-    node.classList.add("is-squash");
-    window.setTimeout(() => node && node.classList.remove("is-squash"), 260);
+    if (reducedMotion || !sprite) return;
+    sprite.classList.remove("is-squash");
+    void sprite.offsetWidth;
+    sprite.classList.add("is-squash");
+    y = Math.max(y, floorClearance(rotation));
+    window.setTimeout(() => sprite && sprite.classList.remove("is-squash"), 260);
   }
 
   function wake() {
@@ -318,6 +433,7 @@
 
   function beginDrag(event) {
     if (drag) return;
+    falling = false;
     const rect = node.getBoundingClientRect();
     drag = {
       id: event.pointerId,
@@ -329,6 +445,8 @@
       t: performance.now(),
       vx: 0,
       vy: 0,
+      grabX: event.clientX - (rect.left + rect.width / 2),
+      grabY: (rect.top + rect.height / 2) - event.clientY,
       down: performance.now()
     };
     try {
@@ -353,8 +471,9 @@
     drag.lastY = event.clientY;
     drag.t = now;
     x = clampX(event.clientX - drag.dx);
-    y = Math.min(Math.max(0, viewport().height - rect.height),
-      Math.max(0, viewport().height - (event.clientY - drag.dy) - rect.height));
+    const floor = floorClearance(rotation);
+    const maxY = Math.max(floor, viewport().height - rect.height);
+    y = Math.min(maxY, Math.max(floor, viewport().height - (event.clientY - drag.dy) - rect.height));
     facing = stepX > 0.6 ? 1 : stepX < -0.6 ? -1 : facing;
     applyTransform();
   }
@@ -365,6 +484,8 @@
       drag.moved < CLICK_SLOP && performance.now() - drag.down < CLICK_MS;
     const vx = drag.vx;
     const vy = drag.vy;
+    const grabX = drag.grabX;
+    const grabY = drag.grabY;
     drag = null;
     node.classList.remove("is-dragging");
     try {
@@ -376,13 +497,16 @@
       return;
     }
     const speed = Math.hypot(vx, vy);
+    const radius = Math.max(1, cellH * 0.42);
+    angularVelocity = Math.max(-8, Math.min(8, -(grabX * vy - grabY * vx) / (radius * radius) * 5));
+    falling = true;
     if (speed > MIN_THROW_SPEED && !reducedMotion) {
       velocity = { x: vx, y: vy };
-      setState("fall", 0);
     } else {
-      velocity = { x: 0, y: 0 };
-      setState("fall", 0);
+      velocity = { x: reducedMotion ? 0 : vx * 0.2, y: 0 };
+      if (reducedMotion) angularVelocity = 0;
     }
+    setState("fear", 0);
   }
 
   function closeMenu() {
@@ -560,6 +684,9 @@
     node.setAttribute("aria-label", "奶蛙桌宠，按 Enter 让它说一句话，按住可以拖动");
     node.tabIndex = paused ? -1 : 0;
     bubble.hidden = true;
+    falling = false;
+    rotation = 0;
+    angularVelocity = 0;
     x = clampX(x);
     y = 0;
     node.hidden = previous.wasHidden;
@@ -697,7 +824,8 @@
       if (!node) return;
       if (intro) return;
       x = clampX(x);
-      y = Math.min(y, Math.max(0, viewport().height - node.offsetHeight));
+      const floor = floorClearance(rotation);
+      y = Math.min(Math.max(floor, y), Math.max(floor, viewport().height - node.offsetHeight));
       applyTransform();
     });
   }
@@ -714,6 +842,12 @@
     }
     running = true;
     config = options;
+    falling = false;
+    const sheet = new Image();
+    sheet.onload = () => {
+      try { loadFrameHulls(sheet); } catch (err) { frameHulls = null; }
+    };
+    sheet.src = config.sheet;
     reducedMotion = prefersReducedMotion();
     if (window.matchMedia) {
       const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
