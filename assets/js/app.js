@@ -336,6 +336,11 @@
     return sources;
   }
 
+  function voiceMetaFor(meta, manifest) {
+    if (!meta || meta.voice || meta.id === "naidan") return meta;
+    return manifest.find((item) => item.id === "naiwa") || meta;
+  }
+
   async function loadChar(meta) {
     const [subEntries, voice] = await Promise.all([
       Promise.all(
@@ -344,7 +349,7 @@
           return [sub.id, { meta: sub, items: Array.isArray(items) ? items : [] }];
         })
       ),
-      loadVoice(meta)
+      loadVoice(voiceMetaFor(meta, state.manifest))
     ]);
 
     let tagsJson = {};
