@@ -5,6 +5,7 @@ const vm = require("vm");
 const context = { window: {} };
 vm.runInNewContext(fs.readFileSync("assets/js/ghimg.js", "utf8"), context);
 const toRaw = context.window.GhImg.toRaw;
+const toCdn = context.window.GhImg.toCdn;
 const sourceDetails = context.window.GhImg.sourceDetails;
 const commit = "a".repeat(40);
 
@@ -32,6 +33,14 @@ assert.strictEqual(
   toRaw(`contributor/${commit}/assets/memes/meme.png`),
   `https://raw.githubusercontent.com/contributor/NaiLoong/${commit}/assets/memes/meme.png`
 );
+assert.strictEqual(
+  toCdn(`contributor/${commit}/assets/memes/meme.png`),
+  `https://cdn.jsdelivr.net/gh/contributor/NaiLoong@${commit}/assets/memes/meme.png`
+);
+assert.strictEqual(
+  toCdn(`https://raw.githubusercontent.com/Musemantic/NaiLoong/${commit}/assets/memes/meme%20one.png`),
+  `https://cdn.jsdelivr.net/gh/musemantic/NaiLoong@${commit}/assets/memes/meme%20one.png`
+);
 const compactSource = sourceDetails(`Musemantic/${commit}/assets/memes/meme.png`);
 assert.strictEqual(compactSource.owner, "Musemantic");
 assert.strictEqual(compactSource.profileUrl, "https://github.com/Musemantic");
@@ -53,7 +62,7 @@ assert.strictEqual(
     "naiwa",
     "animated"
   ),
-  `https://raw.githubusercontent.com/lin-alg/NaiLoong/preview/previews/naiwa/animated/contributor/${commit}/assets/memes/meme.gif.webp`
+  `https://cdn.jsdelivr.net/gh/lin-alg/NaiLoong@preview/previews/naiwa/animated/contributor/${commit}/assets/memes/meme.gif.webp`
 );
 assert.strictEqual(
   context.window.GhImg.preview(
@@ -67,12 +76,16 @@ assert.strictEqual(
 const ghimg = context.window.GhImg;
 const mixed = `MixedOwner/${commit.toUpperCase()}/assets/memes/Laugh.png`;
 assert.strictEqual(
+  ghimg.candidates(mixed, "direct")[0],
+  `https://cdn.jsdelivr.net/gh/mixedowner/NaiLoong@${commit}/assets/memes/Laugh.png`
+);
+assert.strictEqual(
   ghimg.preview(mixed, "naiwa", "static"),
   ghimg.preview(`https://github.com/MixedOwner/NaiLoong/blob/${commit}/assets/memes/Laugh.png`, "naiwa", "static")
 );
 assert.strictEqual(
   ghimg.preview(mixed, "naiwa", "static"),
-  `https://raw.githubusercontent.com/lin-alg/NaiLoong/preview/previews/naiwa/static/mixedowner/${commit}/assets/memes/Laugh.png.webp`
+  `https://cdn.jsdelivr.net/gh/lin-alg/NaiLoong@preview/previews/naiwa/static/mixedowner/${commit}/assets/memes/Laugh.png.webp`
 );
 assert.notStrictEqual(
   ghimg.preview(mixed, "naiwa", "static"),
@@ -80,7 +93,7 @@ assert.notStrictEqual(
 );
 assert.strictEqual(
   ghimg.preview(`contributor/${commit}/meme%20one%2Epng`, "naiwa", "static"),
-  `https://raw.githubusercontent.com/lin-alg/NaiLoong/preview/previews/naiwa/static/contributor/${commit}/meme%20one.png.webp`
+  `https://cdn.jsdelivr.net/gh/lin-alg/NaiLoong@preview/previews/naiwa/static/contributor/${commit}/meme%20one.png.webp`
 );
 assert.strictEqual(
   toRaw(`https://github.com/MixedOwner/NaiLoong/blob/FeatureBranch/Laugh.png`),

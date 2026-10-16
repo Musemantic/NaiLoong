@@ -41,6 +41,27 @@
     return null;
   }
 
+  function toCdn(url) {
+    if (typeof url !== "string") return null;
+    const clean = url.trim().split(/[?#]/)[0];
+    let match = /^([A-Za-z0-9-]+)\/([0-9a-f]{40})\/(.+)$/i.exec(clean);
+    if (match) {
+      return "https://cdn.jsdelivr.net/gh/" + match[1].toLowerCase() + "/NaiLoong@" +
+        match[2].toLowerCase() + "/" + match[3];
+    }
+    match = /^https?:\/\/github\.com\/([^/?#]+)\/([^/?#]+)\/(?:blob|raw)\/([^/?#]+)\/(.+)$/.exec(clean);
+    if (match) {
+      return "https://cdn.jsdelivr.net/gh/" + match[1].toLowerCase() + "/" + match[2] + "@" +
+        match[3] + "/" + match[4];
+    }
+    match = /^https?:\/\/raw\.githubusercontent\.com\/([^/?#]+)\/([^/?#]+)\/([^/?#]+)\/(.+)$/.exec(clean);
+    if (match) {
+      return "https://cdn.jsdelivr.net/gh/" + match[1].toLowerCase() + "/" + match[2] + "@" +
+        match[3] + "/" + match[4];
+    }
+    return null;
+  }
+
   function sourceParts(url) {
     if (typeof url !== "string") return null;
     const clean = url.trim().split(/[?#]/)[0];
@@ -92,7 +113,7 @@
       owner,
       source.commit
     ].concat(parts, (legacy ? (stem || "image") : filename) + ".webp");
-    return "https://raw.githubusercontent.com/" + repoPath() + "/" + config.previewRef + "/" +
+    return "https://cdn.jsdelivr.net/gh/" + repoPath() + "@" + config.previewRef + "/" +
       path.map(encodePathPart).join("/");
   }
 
@@ -132,9 +153,10 @@
   function candidates(url, route) {
     const raw = toRaw(url);
     if (!raw) return [url];
+    const cdn = toCdn(url);
     const chosen = route === undefined ? readRoute() : route;
-    const list = [routeUrl(chosen, raw)];
-    if (list[0] !== raw) list.push(raw);
+    const list = cdn ? [cdn, routeUrl(chosen, raw)] : [routeUrl(chosen, raw)];
+    if (list.indexOf(raw) === -1) list.push(raw);
     config.proxies.forEach((tpl, i) => {
       const next = routeUrl("p" + i, raw);
       if (list.indexOf(next) === -1) list.push(next);
@@ -176,7 +198,7 @@
   function probeBase() {
     const repo = repoPath();
     if (!repo) return null;
-    return "https://raw.githubusercontent.com/" + repo + "/" + config.ref + "/assets/icons/favicon.svg";
+    return "https://cdn.jsdelivr.net/gh/" + repo + "@" + config.ref + "/assets/icons/favicon.svg";
   }
 
   function pickRoute() {
@@ -247,6 +269,7 @@
       config = Object.assign({}, config, opts || {});
     },
     toRaw,
+    toCdn,
     sourceDetails,
     preview,
     previewLegacy,
@@ -254,7 +277,7 @@
     decorate,
     advance,
     start,
-    link: (url) => toRaw(url) || url,
+    link: (url) => toCdn(url) || toRaw(url) || url,
     route: { get: readRoute, set: writeRoute },
     _pick: pickRoute
   };

@@ -54,6 +54,7 @@
   let lastIntroTypeAt = 0;
   let sidebarHintReady = false;
   let homeAssetsReady = Promise.resolve();
+  let heroImagesReady = Promise.resolve(false);
 
   const THEME_NAMES = { auto: "跟随系统", light: "浅色", dark: "深色", naiwa: "奶蛙" };
   const THEME_ICONS = {
@@ -2448,8 +2449,42 @@
         await waitForImage(image, 1500);
       }),
       ...voiceBuffers.values(),
-      ...Array.from(document.querySelectorAll(".hero-tile img"), (image) => waitForImage(image, 5000))
+      heroImagesReady
     ]);
+  }
+
+  function preloadHeroImages() {
+    const images = Array.from(document.querySelectorAll(".hero-tile img"));
+    images.forEach((image) => {
+      const source = image.dataset.src;
+      if (source && !image.getAttribute("src")) image.src = source;
+      image.loading = "eager";
+      if (window.GhImg) window.GhImg.decorate(image);
+    });
+    return Promise.all(images.map((image) => waitForImage(image, 8000)))
+      .then((results) => results.every(Boolean));
+  }
+
+  function waitForHeroImages(timeout) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(false);
+      }, timeout);
+      heroImagesReady.then((ready) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(ready === true);
+      }, () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(false);
+      });
+    });
   }
 
   function setupHomeIntro(petReady) {
@@ -2602,11 +2637,16 @@
       playVoiceSrc(INTRO_FEAR.src, null, INTRO_FEAR.duration).catch(() => {});
       await window.NaiPet.fearIntro();
       if (!active) return;
+      const billiardsReady = await waitForHeroImages(1000);
+      if (!active) return;
       phase = "flee";
       await window.NaiPet.fleeIntro();
       if (!active) return;
+      if (!billiardsReady || !route) {
+        finish(true);
+        return;
+      }
       phase = "billiards";
-      if (!route) { finishBilliards(); return; }
       raf = requestAnimationFrame(draw);
     };
     if (skip) skip.addEventListener("click", () => { unlockIntroAudio(); finish(false); });
@@ -2679,13 +2719,13 @@
     setupSidebarHint();
     if (window.GhImg) {
       window.GhImg.configure({ repo: CONFIG.repo });
-      window.GhImg.decorate(document.querySelectorAll(".hero-visual img"));
       window.GhImg.start();
     }
     bindEvents();
     setupReveal();
     loadStars();
     const petReady = startPet();
+    heroImagesReady = petReady.then(() => preloadHeroImages()).catch(() => false);
     el.grid.innerHTML = skeletonMarkup(8);
     prepareIntroAudio();
     homeAssetsReady = (async () => {

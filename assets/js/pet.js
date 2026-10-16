@@ -650,7 +650,7 @@
     intro.phase = "fear";
     intro.elapsed = 0;
     intro.fearDuration = fear.durations.reduce((total, duration) => total + duration, 0);
-    intro.pauseDuration = 280;
+    intro.pauseDuration = 0;
     bubble.hidden = true;
     node.tabIndex = -1;
     setState("fear", 0);
