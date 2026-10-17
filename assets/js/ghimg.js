@@ -175,12 +175,11 @@
     const cdn = toCdn(url);
     if (!raw && cdn) return [cdn];
     if (!raw) return [url];
-    const list = [];
+    const list = cdn ? [cdn] : [];
     config.proxies.forEach((tpl, i) => {
       const next = routeUrl("p" + i, raw);
       if (list.indexOf(next) === -1) list.push(next);
     });
-    if (cdn && list.indexOf(cdn) === -1) list.push(cdn);
     if (list.indexOf(raw) === -1) list.push(raw);
     return list;
   }

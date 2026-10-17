@@ -85,10 +85,10 @@ assert.strictEqual(
 );
 assert.strictEqual(
   ghimg.candidates(mixed, "direct")[0],
-  `https://gh-proxy.com/https://raw.githubusercontent.com/mixedowner/NaiLoong/${commit}/assets/memes/Laugh.png`
+  `https://cdn.jsdelivr.net/gh/mixedowner/NaiLoong@${commit}/assets/memes/Laugh.png`
 );
 const candidateUrls = ghimg.candidates(mixed, "direct");
-assert(candidateUrls.some((url) => url.startsWith("https://cdn.jsdelivr.net/")), "jsDelivr should remain available as a fallback");
+assert(candidateUrls[1].startsWith("https://gh-proxy.com/"), "gh-proxy.com must be the first fallback after jsDelivr");
 assert(candidateUrls.indexOf(candidateUrls.find((url) => url.startsWith("https://cdn.jsdelivr.net/"))) < candidateUrls.length - 1, "jsDelivr must be tried before raw");
 assert.strictEqual(candidateUrls[candidateUrls.length - 1], ghimg.toRaw(mixed), "raw must be the final fallback");
 assert.strictEqual(
@@ -148,10 +148,10 @@ async function checkProbe(successIndex, expectedRoute) {
   const api = probeContext.window.GhImg;
   const raw = "https://raw.githubusercontent.com/lin-alg/NaiLoong/main/assets/icons/favicon.svg";
   const expected = [
+    "https://cdn.jsdelivr.net/gh/lin-alg/NaiLoong@main/assets/icons/favicon.svg",
     "https://gh-proxy.com/" + raw,
     "https://ghproxy.net/" + raw,
     "https://ghfast.top/" + raw,
-    "https://cdn.jsdelivr.net/gh/lin-alg/NaiLoong@main/assets/icons/favicon.svg",
     raw
   ];
   assert.deepStrictEqual(Array.from(api.candidates(api.asset("assets/icons/favicon.svg"))), expected);
@@ -161,9 +161,9 @@ async function checkProbe(successIndex, expectedRoute) {
 }
 
 (async () => {
-  await checkProbe(0, "p0");
-  await checkProbe(2, "p2");
-  await checkProbe(3, "cdn");
+  await checkProbe(0, "cdn");
+  await checkProbe(1, "p0");
+  await checkProbe(3, "p2");
   await checkProbe(4, "direct");
   console.log("GitHub image URL conversion and route probing passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
