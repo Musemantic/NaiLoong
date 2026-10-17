@@ -133,4 +133,37 @@ assert.strictEqual(image._gh.list[0], originalPreview);
 assert.strictEqual(ghimg.advance(image), legacyPreview);
 assert(image._gh.list.includes(ghimg.link(mixed)), "preview failures should fall back to the original image URL");
 
-console.log("GitHub image URL conversion passed");
+// 模拟网络，覆盖真实线路探测入口，避免只验证图片候选列表。
+async function checkProbe(successIndex, expectedRoute) {
+  const requests = [];
+  const probeContext = {
+    window: {}, AbortController, setTimeout, clearTimeout,
+    fetch: async (url) => {
+      requests.push(url);
+      if (requests.length - 1 !== successIndex) throw new TypeError("Failed to fetch");
+      return {};
+    }
+  };
+  vm.runInNewContext(fs.readFileSync("assets/js/ghimg.js", "utf8"), probeContext);
+  const api = probeContext.window.GhImg;
+  const raw = "https://raw.githubusercontent.com/lin-alg/NaiLoong/main/assets/icons/favicon.svg";
+  const expected = [
+    "https://gh-proxy.com/" + raw,
+    "https://ghproxy.net/" + raw,
+    "https://ghfast.top/" + raw,
+    "https://cdn.jsdelivr.net/gh/lin-alg/NaiLoong@main/assets/icons/favicon.svg",
+    raw
+  ];
+  assert.deepStrictEqual(Array.from(api.candidates(api.asset("assets/icons/favicon.svg"))), expected);
+  assert.strictEqual(await api._pick(), expectedRoute);
+  assert.deepStrictEqual(requests, expected.slice(0, successIndex + 1), "probe must follow image priority and stop after success");
+  assert(!requests.some((url) => /https:\/\/(?:gh-proxy\.com|ghproxy\.net|ghfast\.top)\/https:\/\/cdn\.jsdelivr\.net\//.test(url)), "proxies must never wrap CDN URLs");
+}
+
+(async () => {
+  await checkProbe(0, "p0");
+  await checkProbe(2, "p2");
+  await checkProbe(3, "cdn");
+  await checkProbe(4, "direct");
+  console.log("GitHub image URL conversion and route probing passed");
+})().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -9,8 +9,7 @@
     previewDir: "previews",
     ttl: 6 * 60 * 60 * 1000,
     storeKey: "nai-gh-route",
-    timeout: 2600,
-    headStart: 350
+    timeout: 2600
   };
 
   let config = Object.assign({}, DEFAULTS);
@@ -223,30 +222,19 @@
     return "https://cdn.jsdelivr.net/gh/" + repo + "@" + config.ref + "/assets/icons/favicon.svg";
   }
 
-  function pickRoute() {
+  async function pickRoute() {
     const base = probeBase();
-    if (!base || typeof fetch !== "function") return Promise.resolve(null);
-    return new Promise((resolve) => {
-      let settled = false;
-      const done = (route) => {
-        if (settled) return;
-        settled = true;
-        if (route) writeRoute(route);
-        resolve(route);
-      };
-      probe(base).then((ok) => {
-        if (ok) done("direct");
-      });
-      config.proxies.forEach((tpl, i) => {
-        setTimeout(() => {
-          if (settled) return;
-          probe(tpl.replace("{u}", base)).then((ok) => {
-            if (ok) done("p" + i);
-          });
-        }, config.headStart);
-      });
-      setTimeout(() => done(null), config.timeout + config.headStart + 200);
-    });
+    if (!base || typeof fetch !== "function") return null;
+    const raw = toRaw(base);
+    // 探测和图片使用同一候选列表；代理只包裹 GitHub raw，不包裹 CDN。
+    for (const url of candidates(base)) {
+      if (!await probe(url)) continue;
+      const proxy = config.proxies.findIndex((tpl) => tpl.replace("{u}", raw) === url);
+      const route = proxy >= 0 ? "p" + proxy : url === raw ? "direct" : "cdn";
+      writeRoute(route);
+      return route;
+    }
+    return null;
   }
 
   function start() {
