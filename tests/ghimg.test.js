@@ -41,6 +41,10 @@ assert.strictEqual(
   toCdn(`https://raw.githubusercontent.com/Musemantic/NaiLoong/${commit}/assets/memes/meme%20one.png`),
   `https://cdn.jsdelivr.net/gh/musemantic/NaiLoong@${commit}/assets/memes/meme%20one.png`
 );
+assert.strictEqual(
+  toCdn(`https://cdn.jsdelivr.net/gh/Musemantic/NaiLoong@${commit}/assets/memes/meme.png`),
+  `https://cdn.jsdelivr.net/gh/musemantic/NaiLoong@${commit}/assets/memes/meme.png`
+);
 const compactSource = sourceDetails(`Musemantic/${commit}/assets/memes/meme.png`);
 assert.strictEqual(compactSource.owner, "Musemantic");
 assert.strictEqual(compactSource.profileUrl, "https://github.com/Musemantic");
@@ -76,9 +80,17 @@ assert.strictEqual(
 const ghimg = context.window.GhImg;
 const mixed = `MixedOwner/${commit.toUpperCase()}/assets/memes/Laugh.png`;
 assert.strictEqual(
-  ghimg.candidates(mixed, "direct")[0],
-  `https://cdn.jsdelivr.net/gh/mixedowner/NaiLoong@${commit}/assets/memes/Laugh.png`
+  ghimg.asset("assets/pet/naifrog-sheet.webp"),
+  "https://cdn.jsdelivr.net/gh/lin-alg/NaiLoong@main/assets/pet/naifrog-sheet.webp"
 );
+assert.strictEqual(
+  ghimg.candidates(mixed, "direct")[0],
+  `https://gh-proxy.com/https://raw.githubusercontent.com/mixedowner/NaiLoong/${commit}/assets/memes/Laugh.png`
+);
+const candidateUrls = ghimg.candidates(mixed, "direct");
+assert(candidateUrls.some((url) => url.startsWith("https://cdn.jsdelivr.net/")), "jsDelivr should remain available as a fallback");
+assert(candidateUrls.indexOf(candidateUrls.find((url) => url.startsWith("https://cdn.jsdelivr.net/"))) < candidateUrls.length - 1, "jsDelivr must be tried before raw");
+assert.strictEqual(candidateUrls[candidateUrls.length - 1], ghimg.toRaw(mixed), "raw must be the final fallback");
 assert.strictEqual(
   ghimg.preview(mixed, "naiwa", "static"),
   ghimg.preview(`https://github.com/MixedOwner/NaiLoong/blob/${commit}/assets/memes/Laugh.png`, "naiwa", "static")
@@ -110,11 +122,15 @@ assert(
 );
 const image = {
   tagName: "IMG",
-  getAttribute: (name) => ({ src: originalPreview, "data-preview-legacy": legacyPreview })[name] || null
+  getAttribute: (name) => ({
+    src: originalPreview,
+    "data-preview-legacy": legacyPreview,
+    "data-original-url": ghimg.link(mixed)
+  })[name] || null
 };
 ghimg.decorate(image);
 assert.strictEqual(image._gh.list[0], originalPreview);
 assert.strictEqual(ghimg.advance(image), legacyPreview);
-assert.strictEqual(ghimg.advance(image), null);
+assert(image._gh.list.includes(ghimg.link(mixed)), "preview failures should fall back to the original image URL");
 
 console.log("GitHub image URL conversion passed");

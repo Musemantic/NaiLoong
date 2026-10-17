@@ -38,6 +38,10 @@
       const ref = /^[0-9a-f]{40}$/i.test(match[3]) ? match[3].toLowerCase() : match[3];
       return "https://raw.githubusercontent.com/" + match[1].toLowerCase() + "/" + match[2] + "/" + ref + "/" + match[4];
     }
+    match = /^https?:\/\/cdn\.jsdelivr\.net\/gh\/([^/?#]+)\/([^/@?#]+)@([^/?#]+)\/(.+)$/.exec(clean);
+    if (match) {
+      return "https://raw.githubusercontent.com/" + match[1].toLowerCase() + "/" + match[2] + "/" + match[3] + "/" + match[4];
+    }
     return null;
   }
 
@@ -59,7 +63,20 @@
       return "https://cdn.jsdelivr.net/gh/" + match[1].toLowerCase() + "/" + match[2] + "@" +
         match[3] + "/" + match[4];
     }
+    match = /^https?:\/\/cdn\.jsdelivr\.net\/gh\/([^/?#]+)\/([^/@?#]+)@([^/?#]+)\/(.+)$/.exec(clean);
+    if (match) {
+      return "https://cdn.jsdelivr.net/gh/" + match[1].toLowerCase() + "/" + match[2] + "@" +
+        match[3] + "/" + match[4];
+    }
     return null;
+  }
+
+  function asset(path, ref) {
+    if (typeof path !== "string" || !repoPath()) return null;
+    const clean = path.trim().replace(/^\/+/, "");
+    if (!clean) return null;
+    return "https://cdn.jsdelivr.net/gh/" + repoPath() + "@" + (ref || config.ref) + "/" +
+      clean.split("/").map(encodePathPart).join("/");
   }
 
   function sourceParts(url) {
@@ -72,6 +89,10 @@
       return { owner: match[1], repo: match[2], commit: match[3].toLowerCase(), path: match[4] };
     }
     match = /^https?:\/\/raw\.githubusercontent\.com\/([^/?#]+)\/([^/?#]+)\/([^/?#]+)\/(.+)$/.exec(clean);
+    if (match && /^[0-9a-f]{40}$/i.test(match[3])) {
+      return { owner: match[1], repo: match[2], commit: match[3].toLowerCase(), path: match[4] };
+    }
+    match = /^https?:\/\/cdn\.jsdelivr\.net\/gh\/([^/?#]+)\/([^/@?#]+)@([^/?#]+)\/(.+)$/.exec(clean);
     if (match && /^[0-9a-f]{40}$/i.test(match[3])) {
       return { owner: match[1], repo: match[2], commit: match[3].toLowerCase(), path: match[4] };
     }
@@ -152,15 +173,16 @@
 
   function candidates(url, route) {
     const raw = toRaw(url);
-    if (!raw) return [url];
     const cdn = toCdn(url);
-    const chosen = route === undefined ? readRoute() : route;
-    const list = cdn ? [cdn, routeUrl(chosen, raw)] : [routeUrl(chosen, raw)];
-    if (list.indexOf(raw) === -1) list.push(raw);
+    if (!raw && cdn) return [cdn];
+    if (!raw) return [url];
+    const list = [];
     config.proxies.forEach((tpl, i) => {
       const next = routeUrl("p" + i, raw);
       if (list.indexOf(next) === -1) list.push(next);
     });
+    if (cdn && list.indexOf(cdn) === -1) list.push(cdn);
+    if (list.indexOf(raw) === -1) list.push(raw);
     return list;
   }
 
@@ -244,13 +266,21 @@
       if (!img || img.tagName !== "IMG" || img._gh) return;
       const orig = img.getAttribute("src");
       if (!orig) return;
-      const list = candidates(orig);
-      const legacy = img.getAttribute("data-preview-legacy");
-      if (legacy) {
-        candidates(legacy).forEach((url) => {
-          if (list.indexOf(url) === -1) list.push(url);
+      const list = [];
+      const raw = [];
+      const add = (url) => {
+        if (!url) return;
+        candidates(url).forEach((candidate) => {
+          const target = /^https?:\/\/raw\.githubusercontent\.com\//.test(candidate) ? raw : list;
+          if (target.indexOf(candidate) === -1) target.push(candidate);
         });
-      }
+      };
+      add(orig);
+      add(img.getAttribute("data-preview-legacy"));
+      add(img.getAttribute("data-original-url"));
+      raw.forEach((url) => {
+        if (list.indexOf(url) === -1) list.push(url);
+      });
       img._gh = { list: list, i: 0 };
       if (list[0] !== orig) img.src = list[0];
     });
@@ -270,6 +300,7 @@
     },
     toRaw,
     toCdn,
+    asset,
     sourceDetails,
     preview,
     previewLegacy,

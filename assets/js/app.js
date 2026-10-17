@@ -594,7 +594,9 @@
       '">' +
       ICON_ZOOM +
       "</button>" +
-      '<div class="card-media"><img src="' +
+      '<div class="card-media"><img data-original-url="' +
+      link +
+      '" src="' +
       src +
       '"' +
       (legacyPreview && legacyPreview !== preview
@@ -865,12 +867,25 @@
   }
 
   async function downloadOriginal(url) {
-    const response = await fetch(url, { mode: "cors" });
-    if (!response.ok) throw new Error("HTTP " + response.status);
-    const blob = await response.blob();
+    const candidates = window.GhImg ? window.GhImg.candidates(url) : [url];
+    let blob = null;
+    let sourceUrl = url;
+    let lastError = null;
+    for (const candidate of candidates) {
+      try {
+        const response = await fetch(candidate, { mode: "cors" });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        blob = await response.blob();
+        sourceUrl = candidate;
+        break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (!blob) throw lastError || new Error("图片下载失败");
     const objectUrl = URL.createObjectURL(blob);
     const download = document.createElement("a");
-    const path = new URL(url).pathname;
+    const path = new URL(sourceUrl).pathname;
     download.href = objectUrl;
     download.download = decodeURIComponent(path.slice(path.lastIndexOf("/") + 1)) || "meme";
     document.body.appendChild(download);
@@ -1316,12 +1331,13 @@
       return false;
     }
     if (!pet || !pet.sheet || !Array.isArray(pet.animations) || !pet.animations.some((item) => item && item.id === "idle")) return false;
+    const sheetUrl = window.GhImg && window.GhImg.asset ? window.GhImg.asset(pet.sheet) : pet.sheet;
     const sheet = new Image();
-    sheet.src = pet.sheet;
+    sheet.src = sheetUrl;
     if (!await waitForImage(sheet, 5000)) return false;
     const narrow = (window.innerWidth || 1024) < 600;
     window.NaiPet.start({
-      sheet: pet.sheet,
+      sheet: sheetUrl,
       frameWidth: pet.frameWidth,
       frameHeight: pet.frameHeight,
       columns: pet.columns,
@@ -2457,9 +2473,15 @@
     const images = Array.from(document.querySelectorAll(".hero-tile img"));
     images.forEach((image) => {
       const source = image.dataset.src;
-      if (source && !image.getAttribute("src")) image.src = source;
+      if (source && !image.getAttribute("src")) {
+        image.src = window.GhImg && window.GhImg.asset ? window.GhImg.asset(source) : source;
+      }
       image.loading = "eager";
       if (window.GhImg) window.GhImg.decorate(image);
+      image.addEventListener("error", () => {
+        if (window.GhImg && window.GhImg.advance(image)) return;
+        image.dataset.fallback = "1";
+      });
     });
     return Promise.all(images.map((image) => waitForImage(image, 8000)))
       .then((results) => results.every(Boolean));
