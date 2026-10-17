@@ -17,8 +17,8 @@
   const INTRO_FEAR = { src: "assets/audio/hola_ganbadie.mp3", duration: 0.9 };
   const MAX_UPLOAD_FILES = 10;
   const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-  const UPLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/gif"]);
-  const UPLOAD_EXTENSIONS = /\.(?:jpe?g|png|gif)$/i;
+  const UPLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+  const UPLOAD_EXTENSIONS = /\.(?:jpe?g|png|gif|webp)$/i;
 
   const el = {};
   const state = {
