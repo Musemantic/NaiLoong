@@ -83,6 +83,23 @@ assert.strictEqual(
   ghimg.asset("assets/pet/naifrog-sheet.webp"),
   "https://cdn.jsdelivr.net/gh/lin-alg/NaiLoong@main/assets/pet/naifrog-sheet.webp"
 );
+assert.strictEqual(ghimg.pageAsset("/assets/placeholders/naijing.jpg"), "assets/placeholders/naijing.jpg");
+assert.strictEqual(
+  ghimg.compressedAsset("assets/placeholders/naiwa_laugh.gif"),
+  "assets/placeholders/naiwa_laugh_compressed.webp"
+);
+assert.strictEqual(
+  ghimg.compressedAsset("assets/placeholders/fallback.gif"),
+  "assets/placeholders/fallback_compressed.webp"
+);
+assert.strictEqual(
+  ghimg.compressedAsset("assets/placeholders/naijing.jpg"),
+  "assets/placeholders/naijing_compressed.jpg"
+);
+assert.strictEqual(
+  ghimg.compressedAsset("assets/pet/naifrog-sheet.webp"),
+  "assets/pet/naifrog-sheet-compressed.webp"
+);
 assert.strictEqual(
   ghimg.candidates(mixed, "direct")[0],
   `https://cdn.jsdelivr.net/gh/mixedowner/NaiLoong@${commit}/assets/memes/Laugh.png`

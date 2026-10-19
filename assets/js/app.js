@@ -563,8 +563,8 @@
       ? window.GhImg.previewLegacy(item.url, charMeta.id, sub.meta.id)
       : null;
     const localFallback = typeof item.url === "string" && item.url.indexOf("assets/placeholders/") === 0
-      ? item.url
-      : CONFIG.fallback;
+      ? (window.GhImg ? window.GhImg.compressedAsset(item.url) : item.url)
+      : (window.GhImg ? window.GhImg.compressedAsset(CONFIG.fallback) : CONFIG.fallback);
     const src = esc(preview || localFallback);
     const labels = window.MemeSearch.labelsOf(
       window.MemeSearch.resolveRawTags(item.tags, currentChar().tagIndex),
@@ -1331,7 +1331,10 @@
       return false;
     }
     if (!pet || !pet.sheet || !Array.isArray(pet.animations) || !pet.animations.some((item) => item && item.id === "idle")) return false;
-    const sheetUrl = window.GhImg && window.GhImg.asset ? window.GhImg.asset(pet.sheet) : pet.sheet;
+    const cachedSheet = window.GhImg && window.GhImg.cachedAsset ? await window.GhImg.cachedAsset(pet.sheet) : null;
+    const sheetUrl = cachedSheet || (window.GhImg && window.GhImg.compressedAsset
+      ? window.GhImg.compressedAsset(pet.sheet)
+      : pet.sheet);
     const sheet = new Image();
     sheet.src = sheetUrl;
     if (!await waitForImage(sheet, 5000)) return false;
@@ -1590,7 +1593,9 @@
           return;
         }
         img.dataset.fallback = "1";
-        img.src = CONFIG.fallback;
+        img.src = window.GhImg && window.GhImg.compressedAsset
+          ? window.GhImg.compressedAsset(CONFIG.fallback)
+          : CONFIG.fallback;
       },
       true
     );
@@ -2461,7 +2466,9 @@
         // 慢网或源图不可用时，提前显示现有占位图，保留原图链接。
         delete image._gh;
         image.dataset.fallback = "1";
-        image.src = CONFIG.fallback;
+        image.src = window.GhImg && window.GhImg.compressedAsset
+          ? window.GhImg.compressedAsset(CONFIG.fallback)
+          : CONFIG.fallback;
         await waitForImage(image, 1500);
       }),
       ...voiceBuffers.values(),
@@ -2474,7 +2481,12 @@
     images.forEach((image) => {
       const source = image.dataset.src;
       if (source && !image.getAttribute("src")) {
-        image.src = window.GhImg && window.GhImg.asset ? window.GhImg.asset(source) : source;
+        image.src = window.GhImg && window.GhImg.compressedAsset ? window.GhImg.compressedAsset(source) : source;
+        if (window.GhImg && window.GhImg.cachedAsset) {
+          window.GhImg.cachedAsset(source).then((cached) => {
+            if (cached && image.isConnected) image.src = cached;
+          });
+        }
       }
       image.loading = "eager";
       if (window.GhImg) window.GhImg.decorate(image);
@@ -2485,6 +2497,18 @@
     });
     return Promise.all(images.map((image) => waitForImage(image, 8000)))
       .then((results) => results.every(Boolean));
+  }
+
+  function cacheHomeOriginals() {
+    if (!window.GhImg || !window.GhImg.cacheAsset) return;
+    [
+      "assets/placeholders/naiwa_laugh.gif",
+      "assets/placeholders/naidan_andi.gif",
+      "assets/placeholders/naiwa_redemption.gif",
+      "assets/placeholders/naijing.jpg",
+      "assets/placeholders/fallback.gif",
+      "assets/pet/naifrog-sheet.webp"
+    ].forEach((path) => window.GhImg.cacheAsset(path));
   }
 
   function waitForHeroImages(timeout) {
@@ -2523,6 +2547,7 @@
       if (visual) visual.classList.add("is-finished");
       if (hero) hero.classList.add("hero-no-visual");
       if (copy) copy.classList.remove("is-pending");
+      cacheHomeOriginals();
     };
     if (!visual || !tiles.length || reduced.matches || (location.hash && location.hash !== "#/")) {
       finishWithoutMotion();
@@ -2607,6 +2632,7 @@
         renderStats();
       }
       document.dispatchEvent(new Event("home-intro-finished"));
+      cacheHomeOriginals();
       if (!animateText) {
         if (window.NaiPet) window.NaiPet.cancelIntro();
         syncPetButton();

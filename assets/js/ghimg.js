@@ -14,6 +14,8 @@
 
   let config = Object.assign({}, DEFAULTS);
   let started = false;
+  let assetDbPromise = null;
+  const assetUrls = new Map();
 
   function repoPath() {
     const match = /^https?:\/\/github\.com\/([^/?#]+)\/([^/?#]+)/.exec(config.repo);
@@ -236,6 +238,77 @@
     return null;
   }
 
+  function pageAsset(path) {
+    if (typeof path !== "string") return null;
+    const clean = path.trim().replace(/^\/+/, "");
+    return clean || null;
+  }
+
+  function compressedAsset(path) {
+    const clean = pageAsset(path);
+    if (!clean) return null;
+    if (clean === "assets/pet/naifrog-sheet.webp") {
+      return "assets/pet/naifrog-sheet-compressed.webp";
+    }
+    if (/\.gif$/i.test(clean)) return clean.replace(/\.gif$/i, "_compressed.webp");
+    return clean.replace(/(\.[^./]+)$/, "_compressed$1");
+  }
+
+  function assetDb() {
+    if (assetDbPromise) return assetDbPromise;
+    assetDbPromise = new Promise((resolve) => {
+      if (typeof indexedDB === "undefined") return resolve(null);
+      const request = indexedDB.open("nai-image-cache", 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains("images")) request.result.createObjectStore("images");
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+      request.onblocked = () => resolve(null);
+    });
+    return assetDbPromise;
+  }
+
+  async function cachedAsset(path) {
+    const key = pageAsset(path);
+    if (!key) return null;
+    if (assetUrls.has(key)) return assetUrls.get(key);
+    const db = await assetDb();
+    if (!db) return null;
+    return new Promise((resolve) => {
+      try {
+        const request = db.transaction("images", "readonly").objectStore("images").get(key);
+        request.onsuccess = () => {
+          if (request.result instanceof Blob) {
+            const url = URL.createObjectURL(request.result);
+            assetUrls.set(key, url);
+            resolve(url);
+          } else resolve(null);
+        };
+        request.onerror = () => resolve(null);
+      } catch (err) { resolve(null); }
+    });
+  }
+
+  async function cacheAsset(path) {
+    const key = pageAsset(path);
+    const db = await assetDb();
+    if (!key || !db || typeof fetch !== "function") return false;
+    try {
+      const response = await fetch(key, { cache: "force-cache" });
+      if (!response.ok) return false;
+      const blob = await response.blob();
+      await new Promise((resolve, reject) => {
+        const transaction = db.transaction("images", "readwrite");
+        transaction.objectStore("images").put(blob, key);
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+      return true;
+    } catch (err) { return false; }
+  }
+
   function start() {
     if (started) return;
     started = true;
@@ -288,6 +361,10 @@
     toRaw,
     toCdn,
     asset,
+    pageAsset,
+    compressedAsset,
+    cachedAsset,
+    cacheAsset,
     sourceDetails,
     preview,
     previewLegacy,
