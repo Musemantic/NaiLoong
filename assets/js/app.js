@@ -1241,9 +1241,10 @@
     return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   }
 
-  function countUp(node, target, delay) {
+  function countUp(node, target, delay, format) {
     if (!node) return Promise.resolve();
     const value = Number(target) || 0;
+    const display = format ? (count) => count.toLocaleString("zh-CN") : String;
     const duration = prefersReducedMotion() ? 360 : 1200;
     const start = performance.now() + (delay || 0);
     node.textContent = "0";
@@ -1251,10 +1252,10 @@
       const step = (now) => {
         const t = Math.min(1, Math.max(0, (now - start) / duration));
         const eased = 1 - Math.pow(1 - t, 3);
-        node.textContent = Math.round(value * eased);
+        node.textContent = display(Math.round(value * eased));
         if (t < 1) requestAnimationFrame(step);
         else {
-          node.textContent = value;
+          node.textContent = display(value);
           resolve();
         }
       };
@@ -2547,6 +2548,7 @@
       if (visual) visual.classList.add("is-finished");
       if (hero) hero.classList.add("hero-no-visual");
       if (copy) copy.classList.remove("is-pending");
+      document.dispatchEvent(new Event("home-intro-finished"));
       cacheHomeOriginals();
     };
     if (!visual || !tiles.length || reduced.matches || (location.hash && location.hash !== "#/")) {
@@ -2711,6 +2713,11 @@
   }
 
   async function init() {
+    document.addEventListener("visitor-stats-loaded", (event) => {
+      const stats = event.detail || {};
+      countUp($("statVisitors"), stats.visitors, 0, true);
+      countUp($("statViews"), stats.views, 120, true);
+    });
     ICONS.hydrate(document);
     el.searchForm = $("searchForm");
     el.searchInput = $("searchInput");

@@ -106,7 +106,7 @@
           <span>仓库主页</span>
         </a>
         <button class="mobile-nav-upload" type="button" data-upload-trigger>
-          <span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M8 10V2.5m0 0L5.25 5.25M8 2.5l2.75 2.75M3 9.5v3.75h10V9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <span class="mobile-nav-icon" data-icon="lucide:upload" aria-hidden="true"></span>
           <span>上传表情</span>
         </button>
         <button class="mobile-nav-toggle" type="button" data-naiwa-toggle aria-pressed="false">
@@ -133,16 +133,19 @@
           <span class="hero-lead-type" aria-hidden="true">全球首个奶科生物表情包集散地，致力于让优质表情触手可及。<br>参与本开源项目，让你轻松掌握 Git 的使用。</span>
         </p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="#contribute">开始贡献</a>
+          <a class="btn btn-primary" href="#contribute">参与项目</a>
           <button class="btn btn-secondary upload-trigger" type="button" data-upload-trigger>
-            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 1.25a.75.75 0 0 1 .75.75v6.19l1.72-1.72a.75.75 0 1 1 1.06 1.06l-3 3a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06l1.78 1.78V2A.75.75 0 0 1 8 1.25Z"/><path fill="currentColor" d="M2.75 10a.75.75 0 0 1 .75.75v2.5c0 .138.112.25.25.25h8.5a.25.25 0 0 1 .25.25v2.5a1.75 1.75 0 0 1-1.75 1.75h-8.5A1.75 1.75 0 0 1 2 13.25v-2.5a.75.75 0 0 1 .75-.75Z"/></svg>
+            <span data-icon="lucide:upload" aria-hidden="true"></span>
             <span>上传表情</span>
           </button>
+          <a class="btn btn-secondary" href="https://qm.qq.com/q/IjrEuQd1mg" target="_blank" rel="noopener noreferrer">加入奶蛙研究所</a>
         </div>
         <dl class="hero-stats">
           <div class="stat"><dt>表情总数</dt><dd id="statItems">0</dd></div>
           <div class="stat"><dt>角色总数</dt><dd id="statChars">0</dd></div>
           <div class="stat"><dt>标签总数</dt><dd id="statTags">0</dd></div>
+          <div class="stat"><dt>访客总数</dt><dd id="statVisitors" aria-live="polite">0</dd></div>
+          <div class="stat"><dt>浏览总数</dt><dd id="statViews" aria-live="polite">0</dd></div>
         </dl>
       </div>
       <div class="hero-visual" aria-hidden="true">
@@ -164,7 +167,7 @@
         </button>
       </div>
       <div class="sidebar-note reveal">
-        <p>想加新角色？开个 Issue 写角色名，维护者会给你建数据目录。</p>
+        <p>想加新角色？</p>
         <a class="link" data-repo-link data-repo-suffix="/issues/new" href="#" rel="noopener">提交角色申请 →</a>
       </div>
     </aside>
@@ -301,7 +304,7 @@
       </div>
       <div class="upload-dialog-body">
         <button class="btn btn-secondary upload-picker" id="uploadChoose" type="button">
-          <svg viewBox="0 0 16 16" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M8 1.25a.75.75 0 0 1 .75.75v6.19l1.72-1.72a.75.75 0 1 1 1.06 1.06l-3 3a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06l1.78 1.78V2A.75.75 0 0 1 8 1.25Z"/><path fill="currentColor" d="M2.75 10a.75.75 0 0 1 .75.75v2.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 1 1 1.5 0v2.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-2.5a.75.75 0 0 1 .75-.75Z"/></svg>
+          <span data-icon="lucide:upload" data-icon-size="24" aria-hidden="true"></span>
           <span>选择图片</span>
         </button>
         <input id="uploadInput" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,image/jpeg,image/png,image/gif,image/webp" aria-label="选择待上传图片" multiple hidden>
@@ -335,6 +338,7 @@
   <script src="assets/js/search.js"></script>
   <script src="assets/js/ghimg.js"></script>
   <script src="assets/js/pet.js"></script>
+  <script src="assets/js/stats.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>

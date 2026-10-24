@@ -42,5 +42,8 @@ jobs:
       - name: Test resource loading recovery
         run: node tests/resources.test.js
 
+      - name: Test visitor statistics
+        run: node tests/stats.test.js
+
       - name: Validate repository data
         run: python scripts/validate_data.py

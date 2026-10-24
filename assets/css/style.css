@@ -952,8 +952,13 @@ code {
 
 .hero-stats {
   display: flex;
-  gap: var(--sp-8);
+  flex-wrap: wrap;
+  gap: var(--sp-4) var(--sp-8);
   padding-top: var(--sp-2);
+}
+
+.stat {
+  min-width: 5.25rem;
 }
 
 .stat dt {
@@ -967,6 +972,7 @@ code {
   font-weight: 600;
   letter-spacing: -0.5px;
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .hero-visual {
