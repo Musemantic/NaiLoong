@@ -1,27 +1,66 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="auto">
+<html lang="zh-CN" class="home-page" data-theme="naiwa">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>奶-hub · NaiLoong — 分布式表情包仓库</title>
+  <title>奶-hub — 奶家人的圣地</title>
   <meta name="description" content="奶-hub（NaiLoong）：奶蛙、奶蛋表情合集，顺便带你走完 Fork → PR 的首次 GitHub 贡献流程。">
   <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <link rel="preload" href="assets/audio/hola_ganbadie.mp3" as="audio" type="audio/mpeg">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="奶-hub · NaiLoong">
+  <meta property="og:title" content="奶-hub · NaiLoong — 分布式表情包仓库">
+  <meta property="og:description" content="奶-hub（NaiLoong）：奶蛙、奶蛋表情合集，顺便带你走完 Fork → PR 的首次 GitHub 贡献流程。">
+  <meta property="og:url" content="https://lin-alg.github.io/NaiLoong/">
+  <meta property="og:image" content="https://lin-alg.github.io/NaiLoong/assets/placeholders/naijing.jpg">
+  <meta name="twitter:card" content="summary">
   <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/style.css">
+  <script>
+    if (!location.hash || location.hash === "#/") {
+      document.documentElement.classList.add("home-intro-active");
+    } else {
+      document.documentElement.classList.add("home-direct-route");
+    }
+  </script>
+  <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "b99c4e623f3b48fdb0f42e6d9c97c4c1"}'></script><!-- End Cloudflare Web Analytics -->
 </head>
 <body>
+  <div class="naiwa-backdrop" aria-hidden="true">
+    <svg class="naiwa-eye" viewBox="75 235 490 545" focusable="false" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <clipPath id="naiwaLidA">
+          <rect class="naiwa-lid" x="95" y="243" width="480" height="314"></rect>
+        </clipPath>
+        <clipPath id="naiwaLidB">
+          <rect class="naiwa-lid naiwa-lid-2" x="95" y="243" width="480" height="314"></rect>
+        </clipPath>
+      </defs>
+      <g clip-path="url(#naiwaLidA)">
+        <g clip-path="url(#naiwaLidB)">
+          <circle class="naiwa-eye-ring" cx="400" cy="400" r="122" pathLength="1"></circle>
+          <circle class="naiwa-eye-pupil" cx="400" cy="400" r="102"></circle>
+          <circle class="naiwa-eye-glint" cx="358" cy="342" r="14"></circle>
+          <path class="naiwa-eye-glint-arc" pathLength="1" d="M 405.2 325.1 A 75 75 0 0 1 464.3 361.4"></path>
+        </g>
+      </g>
+      <path class="naiwa-mouth" pathLength="1" d="M 287.5 653 A 520 520 0 0 1 105 741.5"></path>
+    </svg>
+  </div>
   <a class="skip-link" href="#main">跳到主内容</a>
 
   <header class="site-header">
     <div class="container header-inner">
       <a class="brand" href="#/">
-        <span class="brand-mark" aria-hidden="true">🍼</span>
+        <span class="brand-mark" data-icon="tabler:baby-bottle" data-icon-size="20" aria-hidden="true"></span>
         <span class="brand-name">奶-hub</span>
         <span class="brand-sub">NaiLoong</span>
       </a>
 
       <nav class="header-nav" aria-label="主导航">
-        <a class="btn btn-ghost" href="#gallery">表情库</a>
+        <a class="btn btn-ghost" href="#favorites">收藏夹</a>
         <a class="btn btn-ghost" href="#contribute">如何贡献</a>
         <a class="btn btn-ghost" data-repo-link href="#" rel="noopener">仓库主页</a>
       </nav>
@@ -33,16 +72,54 @@
               <path fill="currentColor" d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"></path>
             </svg>
           </button>
-          <input id="searchInput" type="search" placeholder="搜索标题 / 标签…（回车搜索）" autocomplete="off" spellcheck="false" aria-label="搜索表情，按回车执行">
+          <input id="searchInput" type="search" placeholder="搜索表情 / 标签…" autocomplete="off" spellcheck="false" aria-label="搜索表情">
           <kbd>/</kbd>
         </form>
 
+        <button id="naiwaToggle" class="btn btn-ghost btn-sm hide-sm" type="button" data-naiwa-toggle aria-pressed="false" title="切换到奶蛙主题"><span data-icon="lucide-lab:frog-face" aria-hidden="true"></span><span>奶蛙</span></button>
+
+        <button id="petToggle" class="btn btn-ghost btn-sm hide-sm" type="button" data-pet-toggle aria-pressed="true" title="让奶蛙躲起来"><span data-icon="lucide:paw-print" aria-hidden="true"></span><span>桌宠</span></button>
+
         <button id="themeToggle" class="btn btn-ghost icon-btn" type="button" aria-label="切换配色主题" title="切换配色主题">
-          <span id="themeIcon" aria-hidden="true">🌗</span>
+          <span id="themeIcon" data-icon="lucide:sun-moon" aria-hidden="true"></span>
         </button>
 
-        <a class="btn btn-secondary hide-sm" data-repo-link href="#" rel="noopener">GitHub</a>
+        <a class="btn btn-secondary hide-sm star-btn" data-repo-link data-repo-suffix="/stargazers" href="#" rel="noopener" title="觉得有趣就给项目点个 Star 吧~">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+          <span id="starCount">Star</span>
+        </a>
+
+        <button class="btn btn-ghost icon-btn menu-toggle" id="mobileMenuToggle" type="button" aria-expanded="false" aria-controls="mobileNav" aria-label="打开菜单" title="打开菜单">
+          <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M1.75 3.25A.75.75 0 0 1 2.5 2.5h11a.75.75 0 0 1 0 1.5h-11a.75.75 0 0 1-.75-.75Zm0 4.75a.75.75 0 0 1 .75-.75h11a.75.75 0 0 1 0 1.5h-11a.75.75 0 0 1-.75-.75Zm0 4.75a.75.75 0 0 1 .75-.75h11a.75.75 0 0 1 0 1.5h-11a.75.75 0 0 1-.75-.75Z"/></svg>
+        </button>
       </div>
+
+      <nav class="mobile-nav" id="mobileNav" aria-label="移动端主导航" hidden>
+        <a href="#favorites">
+          <span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="m8 1.75 1.94 3.93 4.34.63-3.14 3.06.74 4.32L8 11.65l-3.88 2.04.74-4.32L1.72 6.31l4.34-.63L8 1.75Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span>
+          <span>收藏夹</span>
+        </a>
+        <a href="#contribute">
+          <span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M8 2.25v11.5M2.25 8h11.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="8" r="6.25" stroke="currentColor" stroke-width="1.2"/></svg></span>
+          <span>如何贡献</span>
+        </a>
+        <a data-repo-link data-repo-suffix="" href="#" rel="noopener">
+          <span class="mobile-nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M3 2.5h6.25L13 6.25v7.25H3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2.75v3.5h3.5M5.25 9h5.5M5.25 11.25h5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <span>仓库主页</span>
+        </a>
+        <button class="mobile-nav-upload" type="button" data-upload-trigger>
+          <span class="mobile-nav-icon" data-icon="lucide:upload" aria-hidden="true"></span>
+          <span>上传表情</span>
+        </button>
+        <button class="mobile-nav-toggle" type="button" data-naiwa-toggle aria-pressed="false">
+          <span class="mobile-nav-icon" data-icon="lucide-lab:frog-face" aria-hidden="true"></span>
+          <span>奶蛙主题</span>
+        </button>
+        <button class="mobile-nav-toggle" type="button" data-pet-toggle aria-pressed="true">
+          <span class="mobile-nav-icon" data-icon="lucide:paw-print" aria-hidden="true"></span>
+          <span>奶蛙桌宠</span>
+        </button>
+      </nav>
     </div>
   </header>
 
@@ -50,67 +127,100 @@
     <div class="hero-aurora" aria-hidden="true"></div>
     <div class="container hero-inner">
       <div class="hero-copy">
-        <span class="badge badge-open">
-          <span class="dot" aria-hidden="true"></span>
-          PRs Welcome
-        </span>
-        <h1 class="hero-title">变化永恒，<br><span class="hero-accent">奶龙</span> 助你领先。</h1>
-        <p class="hero-lead">
-          图片存在你自己的 fork 里，主仓库只多一行 JSON。照着下面四步做，你就完成了第一次&nbsp;Pull&nbsp;Request。
+        <h1 class="hero-title" aria-label="变化永恒，奶蛙助你领先。">
+          <span class="hero-title-row" aria-hidden="true"><span data-title-rain>变化永恒，</span></span>
+          <span class="hero-title-row" aria-hidden="true"><span class="hero-accent hero-brand">奶蛙</span><span class="hero-title-space"> </span><span data-title-rain>助你领先。</span></span>
+        </h1>
+        <p class="hero-lead" id="heroLead" aria-label="全球最大的奶科生物表情包集散地，致力于让优质表情触手可及。参与本开源项目，让你轻松掌握 Git 的使用。">
+          <span class="hero-lead-type" aria-hidden="true">全球最大的奶科生物表情包集散地，致力于让优质表情触手可及。<br>参与本开源项目，让你轻松掌握 Git 的使用。</span>
         </p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="#contribute">开始贡献</a>
-          <a class="btn btn-secondary" href="#gallery">浏览表情</a>
+          <a class="btn btn-primary" href="#contribute">参与项目</a>
+          <button class="btn btn-secondary upload-trigger" type="button" data-upload-trigger>
+            <span data-icon="lucide:upload" aria-hidden="true"></span>
+            <span>上传表情</span>
+          </button>
+          <a class="btn btn-secondary" href="https://qm.qq.com/q/IjrEuQd1mg" target="_blank" rel="noopener noreferrer">加入奶蛙研究所</a>
         </div>
         <dl class="hero-stats">
           <div class="stat"><dt>表情总数</dt><dd id="statItems">0</dd></div>
           <div class="stat"><dt>角色总数</dt><dd id="statChars">0</dd></div>
           <div class="stat"><dt>标签总数</dt><dd id="statTags">0</dd></div>
+          <div class="stat"><dt>访客总数</dt><dd id="statVisitors" aria-live="polite">0</dd></div>
+          <div class="stat"><dt>浏览总数</dt><dd id="statViews" aria-live="polite">0</dd></div>
         </dl>
-      </div>
-      <div class="hero-visual" aria-hidden="true">
-        <div class="hero-tile t1"><img src="assets/placeholders/naiwa_laugh.gif" alt=""></div>
-        <div class="hero-tile t2"><img src="assets/placeholders/naidan_andi.gif" alt=""></div>
-        <div class="hero-tile t3"><img src="assets/placeholders/naiwa_redemption.gif" alt=""></div>
-        <div class="hero-tile t4"><img src="assets/placeholders/naijing.jpg" alt=""></div>
       </div>
     </div>
   </section>
 
+  <nav class="hero-visual" aria-label="奶-hub板块">
+    <a class="hero-tile t1" href="#" data-coming-soon aria-label="奶蛙游戏，正在开发中">
+      <span class="hero-art hero-art-games" data-art="assets/pet/naiwa-games.webp" aria-hidden="true"></span>
+      <span class="hero-label">奶蛙游戏</span>
+    </a>
+    <a class="hero-tile t2" href="https://tools.nai-hub.com" target="_blank" rel="noopener noreferrer" data-coming-soon aria-label="奶蛙工具，正在开发中">
+      <span class="hero-art hero-art-tools" data-art="assets/pet/naiwa-tools.webp" aria-hidden="true"></span>
+      <span class="hero-label">奶蛙工具</span>
+    </a>
+    <a class="hero-tile t3" href="#" data-coming-soon aria-label="奶蛙排行榜，正在开发中">
+      <span class="hero-art hero-art-winners" data-art="assets/pet/Winners.webp" aria-hidden="true"></span>
+      <span class="hero-label">奶蛙排行榜</span>
+    </a>
+    <a class="hero-tile t4" href="#" data-coming-soon aria-label="奇思妙想，正在开发中">
+      <span class="hero-art hero-art-other" data-art="pet-sheet" aria-hidden="true"></span>
+      <span class="hero-label">奇思妙想</span>
+    </a>
+    <div class="intro-projectile t1"><img data-src="assets/placeholders/naiwa_laugh.gif" alt=""></div>
+    <div class="intro-projectile t2"><img data-src="assets/placeholders/naidan_andi.gif" alt=""></div>
+    <div class="intro-projectile t3"><img data-src="assets/placeholders/naiwa_redemption.gif" alt=""></div>
+    <div class="intro-projectile t4"><img data-src="assets/placeholders/naijing.jpg" alt=""></div>
+  </nav>
+
   <main id="main" class="container layout" tabindex="-1">
     <aside class="sidebar" aria-label="角色导航">
       <p class="sidebar-title">角色</p>
-      <nav class="sidebar-nav" id="sidebarNav"></nav>
+      <div class="sidebar-nav-shell">
+        <nav class="sidebar-nav" id="sidebarNav"></nav>
+        <button class="sidebar-scroll-hint" id="sidebarScrollHint" type="button" aria-label="向右查看更多角色" title="向右查看更多角色" hidden>
+          <span data-icon="lucide:chevron-right" aria-hidden="true"></span>
+        </button>
+      </div>
       <div class="sidebar-note reveal">
-        <p>想加新角色？开个 Issue 写角色名，维护者会给你建数据目录。</p>
+        <p>想加新角色？</p>
         <a class="link" data-repo-link data-repo-suffix="/issues/new" href="#" rel="noopener">提交角色申请 →</a>
       </div>
     </aside>
 
     <div class="content" id="gallery">
+      <div class="favorites-heading" id="favoritesHeading" hidden>
+        <div><h2>收藏夹</h2><p id="favoritesCount" role="status" aria-live="polite"></p></div>
+        <a class="btn btn-ghost" href="#/">返回表情库</a>
+      </div>
+      <p class="role-intro" id="roleIntro" hidden></p>
       <div class="toolbar">
         <div class="tabs" id="subTabs" role="tablist" aria-label="表情类型"></div>
         <div class="toolbar-meta">
-          <span class="count" id="resultCount">—</span>
+          <button class="btn btn-ghost btn-sm" id="randomBtn" type="button" title="从当前结果中随机打开一张"><span data-icon="lucide:dices" aria-hidden="true"></span><span>手气不错</span></button>
+          <span class="count" id="resultCount" role="status" aria-live="polite">—</span>
           <button class="btn btn-ghost btn-sm" id="clearFilters" type="button" hidden>清除筛选</button>
         </div>
       </div>
 
       <div class="tag-panel" id="tagPanel" aria-label="标签筛选"></div>
 
-      <div class="grid" id="grid" aria-live="polite"></div>
+      <div class="grid" id="grid"></div>
 
       <div class="pager pager-bottom" id="pagerBottom" aria-label="分页导航"></div>
 
       <div class="empty-state" id="emptyState" hidden>
-        <div class="empty-icon" aria-hidden="true">🔍</div>
+        <div class="empty-icon" data-icon="lucide:search" data-icon-size="40" aria-hidden="true"></div>
         <h3>没找到匹配的表情</h3>
         <p>换个关键词，或者点掉几个标签试试。</p>
         <button class="btn btn-secondary" id="emptyReset" type="button">重置筛选</button>
       </div>
 
       <div class="empty-state" id="errorState" hidden>
-        <div class="empty-icon" aria-hidden="true">🚨</div>
+        <div class="empty-icon" data-icon="lucide:circle-alert" data-icon-size="40" aria-hidden="true"></div>
         <h3>数据加载失败</h3>
         <p id="errorMsg">请检查网络，或稍后重试。</p>
         <button class="btn btn-primary" id="retryBtn" type="button">重新加载</button>
@@ -123,57 +233,140 @@
       <div class="section-head reveal">
         <p class="eyebrow">Contribute</p>
         <h2 class="section-title">选择你的贡献方式</h2>
-        <p class="section-lead">分享一张表情、练习一次 GitHub 投稿，或直接改进网站和项目。</p>
+        <p class="section-lead">分享一张表情、练习 GitHub 协作流程，或直接改进网站和项目。</p>
       </div>
 
       <ol class="quest">
         <li class="quest-card reveal">
           <span class="quest-num">01</span>
           <h3>直接分享表情</h3>
-          <p>直接在置顶投稿 Issue 的评论区上传图片即可，不需要其它操作。</p>
+          <p>直接在置顶 Issue 的评论区上传图片即可，不需要其它操作。</p>
           <a class="link" data-repo-link data-repo-suffix="/issues/1" href="#" rel="noopener">打开表情投稿区 →</a>
-          <p><a class="link" data-repo-link data-repo-suffix="/blob/main/docs/meme-submissions.md" href="#" rel="noopener">查看投稿格式</a></p>
+          <p><a class="link" href="docs.html#/meme-submissions">查看投稿要求</a></p>
         </li>
         <li class="quest-card reveal">
           <span class="quest-num">02</span>
-          <h3>学习 GitHub 投稿</h3>
-          <p>跟着教程完成 Fork、Git Bash、分支、commit 和 Pull Request，也包含更新他人条目与解决冲突。</p>
-          <a class="link" data-repo-link data-repo-suffix="/blob/main/docs/github-beginner-guide.md" href="#" rel="noopener">打开新手教程 →</a>
+          <h3>学习 GitHub 协作流程</h3>
+          <p>跟着教程学习Github的使用，顺便将你的表情合并到网站中。</p>
+          <a class="link" href="contribute.html">可视化流程 →</a>
+          <p><a class="link" href="docs.html#/github-beginner-guide">阅读文字教程</a></p>
         </li>
         <li class="quest-card reveal">
           <span class="quest-num">03</span>
           <h3>改进项目本身</h3>
-          <p>了解网站模块、数据约定、本地运行方式、自动测试和发布流程。</p>
-          <a class="link" data-repo-link data-repo-suffix="/blob/main/docs/project-maintainers-guide.md" href="#" rel="noopener">打开项目开发指南 →</a>
+          <p>了解项目结构、数据约定、CI/CD流程。</p>
+          <a class="link" href="docs.html#/project-maintainers-guide">打开项目开发指南 →</a>
         </li>
       </ol>
 
       <p class="quest-help reveal">
-        不确定从哪里开始？查看 <a class="link" data-repo-link data-repo-suffix="/blob/main/CONTRIBUTING.md" href="#" rel="noopener">贡献指南总览</a>，或到
-        <a class="link" data-repo-link data-repo-suffix="/issues/new" href="#" rel="noopener">Issue 页面提问 →</a>
+        不确定从哪里开始？查看 <a class="link" href="docs.html#/contributing">贡献指南</a>，或开一个新
+        <a class="link" data-repo-link data-repo-suffix="/issues" href="#" rel="noopener">Issue 咨询 →</a>
       </p>
     </div>
   </section>
 
   <footer class="site-footer">
     <div class="container footer-inner">
-      <p>🍼🐲 <strong>奶-hub / NaiLoong</strong> — MIT License · 内容全部来自社区 PR</p>
+      <p><span class="footer-mark" aria-hidden="true"><span data-icon="tabler:baby-bottle"></span><span data-icon="tabler:dragon"></span></span> <strong>奶-hub</strong> —— 理解奶蛙，欣赏奶蛙，成为奶蛙。</p>
       <p class="footer-links">
         <a class="link" data-repo-link href="#" rel="noopener">GitHub</a>
+        <a class="link" data-repo-link data-repo-suffix="/issues/1" href="#" rel="noopener">投稿区</a>
+        <a class="link" href="docs.html#/github-beginner-guide">新手教程</a>
         <a class="link" href="LICENSE">License</a>
-        <a class="link" data-repo-link data-repo-suffix="/issues/new" href="#" rel="noopener">反馈</a>
+        <a class="link" data-repo-link data-repo-suffix="/issues" href="#" rel="noopener">反馈</a>
       </p>
     </div>
   </footer>
 
+  <nav class="section-navigation" id="sectionNavigation" aria-label="板块导航" hidden>
+    <button class="section-arrow" id="sectionPrevious" type="button" aria-label="上一板块" hidden>
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true"><path d="m6 15 6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="section-arrow" id="sectionNext" type="button" aria-label="下一板块" hidden>
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </nav>
+
+  <dialog class="image-dialog" id="imageDialog" aria-labelledby="imageDialogTitle">
+    <div class="image-dialog-content">
+      <div class="image-dialog-head">
+        <div class="image-dialog-heading">
+          <h2 class="image-dialog-title" id="imageDialogTitle">原图</h2>
+          <p class="image-dialog-source" id="imageDialogSource" hidden>
+            <span>贡献者：<a class="image-dialog-owner" id="imageDialogOwner" href="#" target="_blank" rel="noopener noreferrer"></a></span>
+            <a class="image-dialog-source-link" id="imageDialogSourceLink" href="#" target="_blank" rel="noopener noreferrer">查看源文件</a>
+            <button class="btn btn-ghost btn-sm image-dialog-download" id="imageDialogDownload" type="button" hidden title="下载原图" aria-label="下载原图">
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 1.25a.75.75 0 0 1 .75.75v6.19l1.72-1.72a.75.75 0 1 1 1.06 1.06l-3 3a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06l1.78 1.78V2A.75.75 0 0 1 8 1.25Z"/><path fill="currentColor" d="M2.75 10a.75.75 0 0 1 .75.75v2.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-2.5a.75.75 0 0 1 .75-.75Z"/></svg>
+              <span>下载原图</span>
+            </button>
+          </p>
+        </div>
+        <button class="btn btn-ghost icon-btn image-dialog-close" id="imageDialogClose" type="button" aria-label="关闭原图">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 1 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></svg>
+        </button>
+      </div>
+      <div class="image-dialog-tags" id="imageDialogTags" aria-label="表情标签" hidden></div>
+      <div class="image-dialog-stage">
+        <p class="image-dialog-status" id="imageDialogStatus" role="status" hidden>正在加载原图…</p>
+        <img id="imageDialogImage" alt="" hidden>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="upload-dialog" id="uploadDialog" aria-labelledby="uploadDialogTitle">
+    <div class="upload-dialog-content">
+      <div class="upload-dialog-head">
+        <div>
+          <h2 class="upload-dialog-title" id="uploadDialogTitle">上传表情</h2>
+          <p class="upload-dialog-subtitle">可上传动图或静态图，单张图片不超过 5 MB，一次最多选择 10 张。</p>
+        </div>
+        <button class="btn btn-ghost icon-btn upload-dialog-close" id="uploadDialogClose" type="button" aria-label="关闭上传窗口" title="关闭上传窗口">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 1 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></svg>
+        </button>
+      </div>
+      <div class="upload-dialog-body">
+        <button class="btn btn-secondary upload-picker" id="uploadChoose" type="button">
+          <span data-icon="lucide:upload" data-icon-size="24" aria-hidden="true"></span>
+          <span>选择图片</span>
+        </button>
+        <input id="uploadInput" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,image/jpeg,image/png,image/gif,image/webp" aria-label="选择待上传图片" multiple hidden>
+        <p class="upload-selection" id="uploadSelection" role="status">支持JPEG、PNG、GIF、WebP格式</p>
+        <ul class="upload-list" id="uploadList" aria-label="待上传图片"></ul>
+        <div class="upload-progress" aria-live="polite">
+          <div class="upload-progress-head">
+            <span id="uploadProgressStatus">等待选择图片</span>
+            <span id="uploadProgressCount">0 / 0</span>
+          </div>
+          <div class="upload-progress-track" id="uploadProgressTrack" role="progressbar" aria-label="上传进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <span id="uploadProgressBar"></span>
+          </div>
+        </div>
+        <div class="upload-dialog-actions">
+          <button class="btn btn-ghost" id="uploadCancel" type="button">取消</button>
+          <button class="btn btn-primary" id="uploadSubmit" type="button" disabled>开始上传</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="coming-soon-dialog" id="comingSoonDialog" aria-labelledby="comingSoonMessage">
+    <p id="comingSoonMessage">正在开发中，敬请期待！</p>
+    <button class="btn btn-primary" id="comingSoonClose" type="button">知道了</button>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <noscript>
+    <style>html.home-intro-active body > * { visibility: visible !important; } html.home-intro-active, html.home-intro-active body { overflow: auto; }</style>
     <div class="noscript">本站需要启用 JavaScript 才能渲染表情数据。</div>
   </noscript>
 
+  <script src="assets/js/icons.js"></script>
   <script src="assets/js/search.js"></script>
   <script src="assets/js/ghimg.js"></script>
+  <script src="assets/js/pet.js"></script>
+  <script src="assets/js/stats.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>

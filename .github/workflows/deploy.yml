@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy to Cloudflare Pages
 
 on:
   push:
@@ -8,11 +8,9 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: cloudflare-pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -41,21 +39,27 @@ jobs:
       - name: Test GitHub image URL conversion
         run: node tests/ghimg.test.js
 
+      - name: Test markdown renderer
+        run: node tests/md.test.js
+
+      - name: Test intro physics
+        run: node tests/intro.test.js
+
+      - name: Test resource loading recovery
+        run: node tests/resources.test.js
+
+      - name: Test visitor statistics
+        run: node tests/stats.test.js
+
       - name: Validate repository data
         run: python scripts/validate_data.py
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-
   deploy:
     needs: build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Trigger Cloudflare Pages deployment
+        env:
+          CLOUDFLARE_DEPLOY_HOOK_URL: ${{ secrets.CLOUDFLARE_DEPLOY_HOOK_URL }}
+        run: curl --fail --silent --show-error --request POST "$CLOUDFLARE_DEPLOY_HOOK_URL"

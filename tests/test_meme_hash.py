@@ -1,10 +1,31 @@
+import base64
+import copy
 import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
 
+from scripts import meme_hash
+
+from scripts.generate_previews import (
+    MAX_PREVIEW_BYTES,
+    added_preview_entries,
+    convert_to_preview,
+    new_preview_entries,
+    preview_relative_path,
+)
+from scripts.data_editor import (
+    migrate_entry_tags,
+    normalize_image_url,
+    tag_dimensions,
+    tags_to_values,
+    values_to_tags,
+)
 from scripts.meme_hash import (
     added_canonical_urls,
     find_duplicates,
     normalize_state,
     parse_issue_image_urls,
+    parse_claim_comment_links,
     parse_hash_file,
     strip_status_block,
     validate_image_payload,
@@ -12,6 +33,104 @@ from scripts.meme_hash import (
 
 
 class MemeHashTests(unittest.TestCase):
+    def test_new_preview_entries_reads_the_merged_tree(self):
+        commit_a = "a" * 40
+        commit_b = "b" * 40
+        old_entry = {"title": "旧图", "url": f"contributor/{commit_a}/meme.gif"}
+        new_entry = {"title": "新图", "url": f"contributor/{commit_b}/nested/meme.png"}
+
+        class FakeGitHub:
+            def read_contents(self, path, ref):
+                if (path, ref) != ("data/manifest.json", "merge"):
+                    raise AssertionError("unexpected manifest request")
+                return (
+                    '[{"id":"naiwa","subcategories":[{"id":"animated",'
+                    '"file":"naiwa/animated.json"}]}]',
+                    None,
+                )
+
+            def get_pr_files(self, number):
+                if number != 12:
+                    raise AssertionError("unexpected PR number")
+                return [{"filename": "data/naiwa/animated.json", "status": "modified"}]
+
+            def pr_file_json(self, repository, path, ref, allow_missing=False):
+                if repository != "lin-alg/NaiLoong" or path != "data/naiwa/animated.json":
+                    raise AssertionError("unexpected data request")
+                if ref == "base":
+                    return [old_entry]
+                if ref != "merge":
+                    raise AssertionError("unexpected merge ref")
+                return [old_entry, new_entry]
+
+        result = new_preview_entries(
+            FakeGitHub(),
+            {
+                "number": 12,
+                "base": {"ref": "main", "sha": "base"},
+                "merge_commit_sha": "merge",
+            },
+        )
+        self.assertEqual(result, [{"role": "naiwa", "category": "animated", "entry": new_entry}])
+
+    def test_preview_path_preserves_role_category_and_source_tree(self):
+        commit = "b" * 40
+        self.assertEqual(
+            preview_relative_path(
+                "naiwa",
+                "animated",
+                f"contributor/{commit}/assets/memes/laugh.gif",
+            ),
+            f"previews/naiwa/animated/contributor/{commit}/assets/memes/laugh.gif.webp",
+        )
+
+    def test_preview_paths_distinguish_extensions_and_normalize_owner(self):
+        commit = "A" * 40
+        prefix = f"MixedOwner/{commit}/assets/memes/Laugh"
+        png = preview_relative_path("naiwa", "static", prefix + ".png")
+        gif = preview_relative_path("naiwa", "static", prefix + ".gif")
+        self.assertNotEqual(png, gif)
+        self.assertEqual(
+            png,
+            f"previews/naiwa/static/mixedowner/{commit.lower()}/assets/memes/Laugh.png.webp",
+        )
+        self.assertEqual(
+            png,
+            preview_relative_path(
+                "naiwa", "static",
+                f"https://github.com/MixedOwner/NaiLoong/blob/{commit}/assets/memes/Laugh.png",
+            ),
+        )
+
+    def test_preview_path_decodes_source_filename_once(self):
+        commit = "a" * 40
+        self.assertEqual(
+            preview_relative_path("naiwa", "static", f"contributor/{commit}/meme%20one%2Epng"),
+            f"previews/naiwa/static/contributor/{commit}/meme one.png.webp",
+        )
+
+    def test_added_preview_entries_ignore_title_only_changes(self):
+        commit_a = "a" * 40
+        commit_b = "b" * 40
+        base = [{"title": "旧标题", "url": f"contributor/{commit_a}/meme.gif"}]
+        same_image = [{"title": "新标题", "url": f"contributor/{commit_a}/meme.gif"}]
+        replacement = [{"title": "替换图片", "url": f"contributor/{commit_b}/meme.gif"}]
+        self.assertEqual(added_preview_entries(base, same_image), [])
+        self.assertEqual(added_preview_entries(base, replacement), replacement)
+
+    def test_preview_converter_keeps_result_strictly_below_limit(self):
+        calls = []
+
+        def fake_convert(source_path: Path, output_path: Path, side: int, quality: int):
+            calls.append((side, quality))
+            output_path.write_bytes(b"x" * (MAX_PREVIEW_BYTES + 1 if side == 300 else 99))
+
+        with patch("scripts.generate_previews._convert_once", side_effect=fake_convert):
+            result = convert_to_preview(b"source")
+
+        self.assertLess(len(result), MAX_PREVIEW_BYTES)
+        self.assertEqual(calls[-1][0], 270)
+
     def test_parse_hash_file_accepts_blank_lines_and_rejects_bad_values(self):
         self.assertEqual(parse_hash_file("\n" + "a" * 64 + "\n"), {"a" * 64})
         with self.assertRaisesRegex(Exception, "line 1"):
@@ -59,6 +178,49 @@ class MemeHashTests(unittest.TestCase):
             [(1, digest_a), (3, digest_b)],
         )
 
+    def test_pr_duplicate_allows_ingested_hash_only_for_removed_url_replacement(self):
+        digest = "a" * 64
+        state = meme_hash.empty_state()
+        self.assertEqual(
+            meme_hash.pr_duplicate_errors([digest], state, {digest}, 7,
+                                           replacement_hashes=[digest]),
+            [],
+        )
+        self.assertEqual(
+            meme_hash.pr_duplicate_errors([digest], state, {digest}, 7),
+            [(1, digest, "already ingested")],
+        )
+
+    def test_pr_can_take_over_unclaimed_comment_reservation(self):
+        digest = "a" * 64
+        state = meme_hash.empty_state()
+        state["reserved"][digest] = {
+            "kind": "issue_comment", "comment_id": "31", "pr_number": None,
+        }
+        self.assertEqual(meme_hash.pr_duplicate_errors([digest], state, set(), 7), [])
+        state["reserved"][digest]["pr_number"] = 8
+        self.assertEqual(
+            meme_hash.pr_duplicate_errors([digest], state, set(), 7),
+            [(1, digest, "reserved by another PR")],
+        )
+
+    def test_pr_summary_mentions_entry_tags_roles_and_files(self):
+        old = {"id": "naiwa", "name": "奶蛙", "subcategories": [
+            {"id": "static", "name": "静态", "file": "naiwa/static.json"}
+        ]}
+        new = {"id": "naiwa", "name": "奶蛙", "subcategories": [
+            {"id": "static", "name": "静态", "file": "naiwa/static.json"}
+        ]}
+        summary = meme_hash.pr_change_summary({
+            "base_manifest": [old], "head_manifest": [new], "head_sha": "a" * 40,
+            "files": [{"filename": "data/naiwa/static.json"}],
+            "categories": [("data/naiwa/static.json", "data/naiwa/static.json",
+                             [{"title": "a", "url": "u", "tags": [0]}],
+                             [{"title": "a2", "url": "u", "tags": [1]}])],
+        })
+        self.assertIn("条目标签修改：1 条", summary)
+        self.assertIn("条目标题修改：1 条", summary)
+
     def test_added_canonical_urls_only_returns_new_occurrences(self):
         old = ["a", "b", "b"]
         new = ["a", "b", "b", "c", "c"]
@@ -83,9 +245,963 @@ class MemeHashTests(unittest.TestCase):
         )
         self.assertEqual(strip_status_block(body), "投稿者的说明和图片链接")
 
+    def test_comment_link_is_a_valid_multi_claim_reference(self):
+        body = (
+            "来源：\n"
+            "https://github.com/lin-alg/NaiLoong/issues/1#issuecomment-123\n"
+            "https://github.com/lin-alg/NaiLoong/issues/1#issuecomment-456"
+        )
+        self.assertEqual(
+            parse_claim_comment_links(body),
+            [
+                ("123", "https://github.com/lin-alg/NaiLoong/issues/1#issuecomment-123"),
+                ("456", "https://github.com/lin-alg/NaiLoong/issues/1#issuecomment-456"),
+            ],
+        )
+
+    def test_comment_link_rejects_another_repository(self):
+        with self.assertRaisesRegex(Exception, "wrong repository"):
+            parse_claim_comment_links(
+                "https://github.com/another/project/issues/1#issuecomment-123"
+            )
+
+    def test_unprocessed_status_exposes_comment_link_and_keeps_legacy_code(self):
+        body = meme_hash.issue_status_body(
+            "unprocessed",
+            claim_code="MEME-CLAIM-" + "a" * 24,
+            comment_id="123",
+        )
+        self.assertIn("https://github.com/lin-alg/NaiLoong/issues/1#issuecomment-123", body)
+        self.assertIn("MEME-CLAIM-" + "a" * 24, body)
+
     def test_image_payload_has_strict_five_mb_limit(self):
         with self.assertRaisesRegex(Exception, "5 MB"):
             validate_image_payload(b"x" * (5 * 1024 * 1024 + 1), "image/png")
+
+    def test_image_download_retries_transient_network_errors(self):
+        response = Mock()
+        response.geturl.return_value = "https://raw.githubusercontent.com/contributor/NaiLoong/image/test.png"
+        response.headers = {"Content-Type": "image/png"}
+        response.read.return_value = b"\x89PNG\r\n\x1a\n"
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        with patch.object(
+            meme_hash,
+            "urlopen",
+            side_effect=[meme_hash.URLError("temporary"), meme_hash.URLError("temporary"), response],
+        ) as download, patch.object(meme_hash.time, "sleep") as sleep:
+            result = meme_hash.fetch_image_bytes(response.geturl())
+        self.assertEqual(result, b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(download.call_count, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [1, 2])
+
+    def test_image_download_does_not_retry_not_found(self):
+        missing = meme_hash.HTTPError(
+            "https://raw.githubusercontent.com/a/b/c", 404, "Not Found", {}, None
+        )
+        with patch.object(meme_hash, "urlopen", side_effect=missing) as download, patch.object(
+            meme_hash.time, "sleep"
+        ) as sleep:
+            with self.assertRaisesRegex(meme_hash.BotError, "404"):
+                meme_hash.fetch_image_bytes("https://raw.githubusercontent.com/a/b/c")
+        download.assert_called_once()
+        sleep.assert_not_called()
+
+
+class DataEditorDataTests(unittest.TestCase):
+    def test_editor_discovers_ordered_dimensions_and_maps_labels(self):
+        dimensions = tag_dimensions({
+            "mood": {"2": "开心", "0": "平静"},
+            "context": {"0": "日常"},
+        })
+        self.assertEqual(dimensions, [
+            ("mood", [(0, "平静"), (2, "开心")]),
+            ("context", [(0, "日常")]),
+        ])
+        self.assertEqual(tags_to_values([2, None], dimensions), [2, None])
+        self.assertEqual(tags_to_values({"mood": "开心"}, dimensions), [2, None])
+        self.assertEqual(values_to_tags([2, None]), [2, None])
+
+    def test_new_dimension_fills_array_and_object_tags_with_null(self):
+        old = tag_dimensions({"mood": {"0": "平静"}})
+        new = tag_dimensions({"mood": {"0": "平静"}, "scene": {}})
+        entries = [
+            {"title": "a", "tags": [0]},
+            {"title": "b", "tags": {"mood": 0}},
+        ]
+        migrate_entry_tags(entries, old, new, fill_new=True)
+        self.assertEqual(entries[0]["tags"], [0, None])
+        self.assertEqual(entries[1]["tags"], {"mood": 0, "scene": None})
+
+    def test_renamed_dimension_preserves_array_and_object_tags(self):
+        old = tag_dimensions({"mood": {"0": "平静"}, "scene": {"0": "日常"}})
+        new = tag_dimensions({"feeling": {"0": "平静"}, "scene": {"0": "日常"}})
+        entries = [
+            {"title": "a", "tags": [0, None]},
+            {"title": "b", "tags": {"mood": 0, "scene": None}},
+        ]
+        migrate_entry_tags(entries, old, new, {"mood": "feeling"})
+        self.assertEqual(entries[0]["tags"], [0, None])
+        self.assertEqual(entries[1]["tags"], {"feeling": 0, "scene": None})
+
+    def test_image_urls_are_normalized_to_compact_form(self):
+        root = Path(__file__).resolve().parents[1]
+        commit = "A" * 40
+        self.assertEqual(
+            normalize_image_url(
+                f"https://github.com/Contributor/NaiLoong/blob/{commit}/assets/memes/a.gif",
+                root,
+            ),
+            f"contributor/{commit.lower()}/assets/memes/a.gif",
+        )
+        self.assertEqual(
+            normalize_image_url(
+                f"https://raw.githubusercontent.com/Contributor/NaiLoong/{commit}/a.png",
+                root,
+            ),
+            f"contributor/{commit.lower()}/a.png",
+        )
+        self.assertEqual(
+            normalize_image_url(f"contributor/{commit}/a.png", root),
+            f"contributor/{commit.lower()}/a.png",
+        )
+
+
+class MemoryGitHub:
+    def __init__(self, state=None, body=""):
+        self.state = copy.deepcopy(state or meme_hash.empty_state())
+        self.comment = {"id": 31, "node_id": "node-31", "body": body}
+        self.calls = []
+
+    def load_state(self):
+        return copy.deepcopy(self.state), None
+
+    def mutate_state(self, mutator):
+        updated = copy.deepcopy(self.state)
+        result = mutator(updated)
+        self.state = updated
+        return result
+
+    def read_contents(self, path, ref):
+        return "", None
+
+    def get_issue_comment(self, comment_id):
+        return dict(self.comment)
+
+    def edit_issue_comment(self, comment_id, body):
+        self.calls.append(("edit", comment_id, body))
+        self.comment["body"] = body
+        return dict(self.comment)
+
+    def minimize_comment(self, node_id, classifier="SPAM"):
+        self.calls.append(("minimize", node_id, classifier))
+
+    def pr_status_comment(self, number, body, comment_id=None):
+        self.calls.append(("pr-comment", number, body))
+
+
+class HashLifecycleTests(unittest.TestCase):
+    def submission_state(self, issue=True):
+        digest = "a" * 64
+        state = meme_hash.empty_state()
+        state["pull_requests"]["7"] = {
+            "hashes": [digest], "issue_comment_id": "31" if issue else None,
+        }
+        state["reserved"][digest] = {
+            "pr_number": 7, "comment_id": "31" if issue else None,
+        }
+        if issue:
+            state["comments"]["31"] = {
+                "hashes": [digest], "status": "processing", "pr_number": 7,
+                "claim_code": "MEME-CLAIM-" + "b" * 24,
+            }
+        return state, digest
+
+    def comment_event(self):
+        return {
+            "issue": {"number": 1}, "action": "edited",
+            "comment": {"id": 31, "user": {"type": "User"}},
+        }
+
+    def test_merged_comment_preserves_links_and_is_folded_after_edit(self):
+        state, digest = self.submission_state()
+        url = "https://github.com/user-attachments/assets/one"
+        github = MemoryGitHub(state, f"Source note\n![original]({url})")
+        meme_hash.close_pull_request(github, {"number": 7, "merged": True})
+        self.assertEqual(github.state["ingested"], [digest])
+        self.assertNotIn(digest, github.state["reserved"])
+        self.assertIn(f"[original]({url})", github.comment["body"])
+        self.assertIn("Source note", github.comment["body"])
+        self.assertEqual(meme_hash.parse_issue_image_urls(github.comment["body"]), [])
+        self.assertEqual([call[0] for call in github.calls], ["edit", "minimize"])
+        self.assertEqual(github.calls[-1], ("minimize", "node-31", "RESOLVED"))
+        meme_hash.close_pull_request(github, {"number": 7, "merged": True})
+        self.assertEqual(github.state["ingested"], [digest])
+        self.assertEqual(sum(call[0] == "edit" for call in github.calls), 1)
+
+    def test_archive_converts_html_and_reference_images_without_losing_urls(self):
+        url = "https://github.com/user-attachments/assets/html"
+        original = f'<img width="120" alt="sample" src="{url}">\n![ref][upload]\n[upload]: {url}'
+        archived = meme_hash.archive_comment_images(original)
+        self.assertIn(url, archived)
+        self.assertIn("[ref][upload]", archived)
+        self.assertNotIn("<img", archived)
+        self.assertEqual(meme_hash.parse_issue_image_urls(archived), [])
+        self.assertEqual(meme_hash.archive_comment_images(archived), archived)
+
+    def test_archive_retry_after_comment_api_failure(self):
+        state, digest = self.submission_state()
+        github = MemoryGitHub(state, "![original](https://github.com/user-attachments/assets/one)")
+        edit = github.edit_issue_comment
+        with patch.object(github, "edit_issue_comment", side_effect=meme_hash.GitHubAPIError(500, "retry")):
+            with self.assertRaises(meme_hash.GitHubAPIError):
+                meme_hash.close_pull_request(github, {"number": 7, "merged": True})
+        self.assertEqual(github.state["ingested"], [digest])
+        self.assertNotIn("7", github.state["pull_requests"])
+        github.edit_issue_comment = edit
+        meme_hash.close_pull_request(github, {"number": 7, "merged": True})
+        self.assertEqual(github.calls[-1], ("minimize", "node-31", "RESOLVED"))
+
+    def test_missing_comment_does_not_abort_merge(self):
+        state, digest = self.submission_state()
+        github = MemoryGitHub(state)
+        with patch.object(github, "get_issue_comment", side_effect=meme_hash.GitHubAPIError(404, "deleted")):
+            meme_hash.close_pull_request(github, {"number": 7, "merged": True})
+        self.assertEqual(github.state["ingested"], [digest])
+        self.assertEqual(github.calls, [])
+
+    def test_unmerged_issue_pr_retains_pending_issue_reservation(self):
+        state, digest = self.submission_state()
+        github = MemoryGitHub(state)
+        meme_hash.close_pull_request(github, {"number": 7, "merged": False})
+        self.assertIsNone(github.state["reserved"][digest]["pr_number"])
+        self.assertEqual(github.state["comments"]["31"]["status"], "unprocessed")
+        self.assertEqual(meme_hash.pr_duplicate_errors([digest], github.state, set(), 8, "31"), [])
+
+    def test_deleted_unclaimed_comment_releases_hash_reservation(self):
+        state, digest = self.submission_state()
+        state["pull_requests"].clear()
+        state["comments"]["31"].update(status="unprocessed", pr_number=None)
+        state["reserved"][digest]["pr_number"] = None
+        github = MemoryGitHub(state)
+        meme_hash.handle_event(github, "issue_comment", {
+            "action": "deleted",
+            "issue": {"number": 1},
+            "comment": {"id": 31, "user": {"type": "User"}},
+        })
+        self.assertNotIn("31", github.state["comments"])
+        self.assertNotIn(digest, github.state["reserved"])
+
+    def test_deleted_claimed_comment_keeps_hash_reserved_until_pr_closes(self):
+        state, digest = self.submission_state()
+        github = MemoryGitHub(state)
+        meme_hash.handle_deleted_issue_comment(github, 31)
+        self.assertTrue(github.state["comments"]["31"]["deleted"])
+        self.assertEqual(github.state["reserved"][digest]["pr_number"], 7)
+
+        meme_hash.close_pull_request(github, {"number": 7, "merged": False})
+        self.assertNotIn("31", github.state["comments"])
+        self.assertNotIn(digest, github.state["reserved"])
+
+    def test_deleted_claimed_comment_is_archived_when_pr_merges(self):
+        state, digest = self.submission_state()
+        github = MemoryGitHub(state)
+        meme_hash.handle_deleted_issue_comment(github, 31)
+        meme_hash.close_pull_request(github, {"number": 7, "merged": True})
+        self.assertEqual(github.state["ingested"], [digest])
+        self.assertNotIn("31", github.state["comments"])
+        self.assertNotIn(digest, github.state["reserved"])
+
+    def test_archive_clears_ingested_hashes_only_after_hash_file_is_written(self):
+        digest = "d" * 64
+
+        class ArchiveGitHub(MemoryGitHub):
+            def __init__(self, fail_write=False):
+                super().__init__()
+                self.state["ingested"] = [digest]
+                self.state["comments"]["31"] = {
+                    "hashes": [digest], "status": "ingested", "pr_number": 7,
+                }
+                self.hash_file = ""
+                self.fail_write = fail_write
+
+            def read_contents(self, path, ref):
+                return self.hash_file, "blob-sha"
+
+            def write_contents(self, path, branch, text, message, sha=None):
+                if self.fail_write:
+                    raise meme_hash.GitHubAPIError(500, "write failed")
+                self.hash_file = text
+
+        github = ArchiveGitHub()
+        meme_hash.archive_ingested_hashes(github)
+        self.assertEqual(github.hash_file, digest + "\n")
+        self.assertEqual(github.state["ingested"], [])
+        self.assertNotIn("hashes", github.state["comments"]["31"])
+
+        failed = ArchiveGitHub(fail_write=True)
+        with self.assertRaises(meme_hash.GitHubAPIError):
+            meme_hash.archive_ingested_hashes(failed)
+        self.assertEqual(failed.state["ingested"], [digest])
+        self.assertEqual(failed.state["comments"]["31"]["hashes"], [digest])
+
+    def test_unmerged_direct_pr_releases_reservation(self):
+        state, digest = self.submission_state(issue=False)
+        github = MemoryGitHub(state)
+        meme_hash.close_pull_request(github, {"number": 7, "merged": False})
+        self.assertNotIn(digest, github.state["reserved"])
+        self.assertEqual(meme_hash.pr_duplicate_errors([digest], github.state, set(), 7), [])
+
+    def test_merged_multi_comment_pr_updates_all_issue_comments(self):
+        state, digest_a = self.submission_state()
+        digest_b = "b" * 64
+        state["comments"]["32"] = {
+            "hashes": [digest_b], "status": "processing", "pr_number": 7,
+            "claim_code": "MEME-CLAIM-" + "c" * 24,
+        }
+        state["reserved"][digest_b] = {
+            "pr_number": 7, "comment_id": "32",
+        }
+        state["pull_requests"]["7"] = {
+            "hashes": [digest_a, digest_b],
+            "issue_comment_ids": ["31", "32"],
+        }
+        github = MemoryGitHub(state)
+        meme_hash.close_pull_request(github, {"number": 7, "merged": True})
+        self.assertEqual(github.state["ingested"], [digest_a, digest_b])
+        self.assertEqual(github.state["comments"]["31"]["status"], "ingested")
+        self.assertEqual(github.state["comments"]["32"]["status"], "ingested")
+        self.assertEqual(
+            [call[0] for call in github.calls if call[0] == "minimize"],
+            ["minimize", "minimize"],
+        )
+
+    def test_multi_comment_links_claim_the_union_of_comment_images(self):
+        digest_a = "a" * 64
+        digest_b = "b" * 64
+        state = meme_hash.empty_state()
+        for comment_id, digest in (("31", digest_a), ("32", digest_b)):
+            state["comments"][comment_id] = {
+                "hashes": [digest], "status": "unprocessed", "pr_number": None,
+            }
+            state["reserved"][digest] = {
+                "kind": "issue_comment", "comment_id": comment_id, "pr_number": None,
+            }
+        github = MemoryGitHub(state)
+        body = (
+            "https://github.com/lin-alg/NaiLoong/issues/1#issuecomment-31\n"
+            "https://github.com/lin-alg/NaiLoong/issues/1#issuecomment-32"
+        )
+        pull_request = {"number": 8, "base": {"ref": "main"}, "body": body}
+        with patch.object(meme_hash, "pr_data_changes", return_value={"urls": ["one", "two"]}), \
+                patch.object(meme_hash, "hash_fork_urls", return_value=[digest_a, digest_b]), \
+                patch.object(meme_hash, "issue_comment_reply"):
+            meme_hash.process_pull_request(github, pull_request)
+        record = github.state["pull_requests"]["8"]
+        self.assertEqual(record["issue_comment_ids"], ["31", "32"])
+        self.assertEqual(github.state["comments"]["31"]["status"], "processing")
+        self.assertEqual(github.state["comments"]["32"]["status"], "processing")
+
+    def test_legacy_claim_code_still_claims_an_existing_comment(self):
+        digest = "a" * 64
+        code = "MEME-CLAIM-" + "d" * 24
+        state = meme_hash.empty_state()
+        state["comments"]["31"] = {
+            "hashes": [digest], "status": "unprocessed", "pr_number": None,
+            "claim_code": code,
+        }
+        state["reserved"][digest] = {
+            "kind": "issue_comment", "comment_id": "31", "pr_number": None,
+        }
+        github = MemoryGitHub(state)
+        with patch.object(meme_hash, "pr_data_changes", return_value={"urls": ["one"]}), \
+                patch.object(meme_hash, "hash_fork_urls", return_value=[digest]), \
+                patch.object(meme_hash, "issue_comment_reply"):
+            meme_hash.process_pull_request(
+                github,
+                {
+                    "number": 9,
+                    "base": {"ref": "main"},
+                    "body": code,
+                },
+            )
+        self.assertEqual(github.state["pull_requests"]["9"]["issue_comment_ids"], ["31"])
+        self.assertEqual(github.state["comments"]["31"]["status"], "processing")
+
+    def test_removed_comment_images_release_previous_hash_even_without_status_block(self):
+        state, digest = self.submission_state()
+        state["comments"]["31"].update(status="unprocessed", pr_number=None)
+        state["reserved"][digest]["pr_number"] = None
+        github = MemoryGitHub(state, "Only the source note remains")
+        with patch.object(meme_hash, "hash_attachment_urls") as hashing:
+            meme_hash.handle_issue_comment(github, self.comment_event())
+        hashing.assert_not_called()
+        self.assertNotIn(digest, github.state["reserved"])
+        self.assertNotIn("31", github.state["comments"])
+        self.assertEqual(github.comment["body"], "Only the source note remains")
+
+    def test_replaced_comment_image_releases_old_hash(self):
+        state, old_hash = self.submission_state()
+        state["comments"]["31"].update(status="unprocessed", pr_number=None)
+        state["reserved"][old_hash]["pr_number"] = None
+        new_hash = "c" * 64
+        github = MemoryGitHub(state, "![new](https://github.com/user-attachments/assets/new)")
+        with patch.object(meme_hash, "hash_attachment_urls", return_value=[new_hash]):
+            meme_hash.handle_issue_comment(github, self.comment_event())
+        self.assertNotIn(old_hash, github.state["reserved"])
+        self.assertIn(new_hash, github.state["reserved"])
+
+    def test_fake_ingested_display_does_not_skip_hashing(self):
+        body = (
+            meme_hash.STATUS_START + "\n" + meme_hash.issue_status_body("ingested")
+            + "\n" + meme_hash.STATUS_END
+            + "\n![new](https://github.com/user-attachments/assets/new)"
+        )
+        github = MemoryGitHub(body=body)
+        with patch.object(meme_hash, "hash_attachment_urls", return_value=["a" * 64]) as hashing:
+            meme_hash.handle_issue_comment(github, self.comment_event())
+        hashing.assert_called_once()
+        self.assertEqual(github.state["comments"]["31"]["status"], "unprocessed")
+
+    def test_five_image_limit_is_checked_before_downloading(self):
+        github = MemoryGitHub(body="\n".join(
+            f"![image](https://github.com/user-attachments/assets/{index})" for index in range(6)
+        ))
+        with patch.object(meme_hash, "hash_attachment_urls") as hashing:
+            meme_hash.handle_issue_comment(github, self.comment_event())
+        hashing.assert_not_called()
+        self.assertEqual(github.state["reserved"], {})
+        self.assertIn("at most 5", github.comment["body"])
+
+    def test_oversize_replacement_clears_old_reservation(self):
+        state, digest = self.submission_state()
+        state["comments"]["31"].update(status="unprocessed", pr_number=None)
+        state["reserved"][digest]["pr_number"] = None
+        github = MemoryGitHub(state, "![large](https://github.com/user-attachments/assets/new)")
+        with patch.object(meme_hash, "hash_attachment_urls", side_effect=meme_hash.ImageTooLargeError("5 MB")):
+            meme_hash.handle_issue_comment(github, self.comment_event())
+        self.assertNotIn(digest, github.state["reserved"])
+        self.assertEqual(github.state["comments"]["31"]["hashes"], [])
+
+    def test_temporary_download_error_preserves_previous_reservation(self):
+        state, digest = self.submission_state()
+        state["comments"]["31"].update(status="unprocessed", pr_number=None)
+        state["reserved"][digest]["pr_number"] = None
+        github = MemoryGitHub(state, "![image](https://github.com/user-attachments/assets/one)")
+        with patch.object(meme_hash, "hash_attachment_urls", side_effect=meme_hash.BotError("network")):
+            meme_hash.handle_issue_comment(github, self.comment_event())
+        self.assertIn(digest, github.state["reserved"])
+
+
+class PullRequestReadingTests(unittest.TestCase):
+    def github(self):
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "test-token"}):
+            return meme_hash.GitHub()
+
+    def test_json_read_errors_are_not_empty_arrays(self):
+        github = self.github()
+        with patch.object(github, "request", side_effect=meme_hash.GitHubAPIError(404, "missing")):
+            with self.assertRaises(meme_hash.GitHubAPIError):
+                github.pr_file_json("contributor/NaiLoong", "data/naiwa/static.json", "a" * 40)
+            self.assertEqual(github.pr_file_json(
+                "contributor/NaiLoong", "data/naiwa/static.json", "a" * 40, allow_missing=True
+            ), [])
+        for value in ('{}', '[null]', '[{"url":"one","url":"two"}]', '['):
+            with self.subTest(value=value), patch.object(github, "request", return_value={
+                "encoding": "base64", "content": base64.b64encode(value.encode()).decode(),
+            }):
+                with self.assertRaises(meme_hash.BotError):
+                    github.pr_file_json("contributor/NaiLoong", "data/naiwa/static.json", "a" * 40)
+
+    def test_new_urls_are_read_from_fixed_head_sha(self):
+        sha = "a" * 40
+        url = f"contributor/{sha}/meme.png"
+        github = Mock()
+        github.get_pr_files.return_value = [{"filename": "data/naiwa/static.json", "status": "added"}]
+        manifest = [{"id": "naiwa", "subcategories": [{"file": "naiwa/static.json"}]}]
+        github.pr_file_json.side_effect = [manifest, manifest, [{"url": url}]]
+        pr = {
+            "number": 7, "base": {"sha": "b" * 40},
+            "head": {"sha": sha, "repo": {"full_name": "contributor/NaiLoong"}},
+        }
+        self.assertEqual(meme_hash.new_data_urls(github, pr), [
+            f"https://github.com/contributor/NaiLoong/blob/{sha}/meme.png"
+        ])
+        github.get_pr_files.assert_called_once_with(7, expected_head_sha=sha)
+        self.assertEqual(github.pr_file_json.call_args_list[-1].args[-1], sha)
+        self.assertEqual(github.pr_file_json.call_args_list[1].args, (
+            "contributor/NaiLoong", "data/manifest.json", sha,
+        ))
+        github.pr_file_json.side_effect = meme_hash.BotError("read failed")
+        with self.assertRaisesRegex(meme_hash.BotError, "read failed"):
+            meme_hash.new_data_urls(github, pr)
+
+    def test_voice_and_pet_files_are_not_read_as_entries(self):
+        sha = "a" * 40
+        github = Mock()
+        github.get_pr_files.return_value = [
+            {"filename": "data/manifest.json", "status": "modified"},
+            {"filename": "data/naiwa/voice.json", "status": "added"},
+            {"filename": "data/naiwa/tags.json", "status": "modified"},
+            {"filename": "data/pet.json", "status": "added"},
+            {"filename": "data/naiwa/speech.json", "status": "added"},
+            {"filename": "data/naiwa/custom-tags.json", "status": "modified"},
+        ]
+        github.pr_file_json.return_value = [{
+            "id": "naiwa", "voice": "naiwa/speech.json", "tags": "naiwa/custom-tags.json",
+            "subcategories": [{"file": "naiwa/static.json"}],
+        }]
+        pr = {
+            "number": 9, "base": {"sha": "b" * 40},
+            "head": {"sha": sha, "repo": {"full_name": "contributor/NaiLoong"}},
+        }
+        self.assertEqual(meme_hash.new_data_urls(github, pr), [])
+        self.assertEqual([call.args[1] for call in github.pr_file_json.call_args_list], [
+            "data/manifest.json", "data/manifest.json",
+        ])
+
+    def test_new_category_and_renamed_files_follow_each_commit_manifest(self):
+        sha = "a" * 40
+        url = f"contributor/{sha}/meme.png"
+        pr = {
+            "number": 9, "base": {"sha": "b" * 40},
+            "head": {"sha": sha, "repo": {"full_name": "contributor/NaiLoong"}},
+        }
+        for status in ("added", "renamed", "removed", "modified"):
+            with self.subTest(status=status):
+                github = Mock()
+                old = "data/naiwa/old.json"
+                new = "data/naiwa/special.json"
+                github.get_pr_files.return_value = [{
+                    "filename": old if status == "removed" else new,
+                    "previous_filename": old, "status": status,
+                }]
+                base_manifest = [{"subcategories": [{"file": "naiwa/old.json"}]}]
+                head_manifest = [{"subcategories": [{"file": "naiwa/special.json"}]}]
+                old_url = f"contributor/{'c' * 40}/old.png"
+                contents = [base_manifest, head_manifest]
+                if status != "added":
+                    contents.append([{"url": old_url}])
+                if status != "removed":
+                    contents.append([{"url": old_url}, {"url": url}])
+                github.pr_file_json.side_effect = contents
+                expected = [] if status == "removed" else [
+                    f"https://github.com/contributor/NaiLoong/blob/{sha}/meme.png"
+                ]
+                if status == "added":
+                    expected.insert(0, f"https://github.com/contributor/NaiLoong/blob/{'c' * 40}/old.png")
+                self.assertEqual(meme_hash.new_data_urls(github, pr), expected)
+
+    def test_category_url_errors_identify_the_file_and_entry(self):
+        sha = "a" * 40
+        github = Mock()
+        github.get_pr_files.return_value = [{"filename": "data/naiwa/static.json", "status": "added"}]
+        manifest = [{"subcategories": [{"file": "naiwa/static.json"}]}]
+        pr = {
+            "number": 9, "base": {"sha": "b" * 40},
+            "head": {"sha": sha, "repo": {"full_name": "contributor/NaiLoong"}},
+        }
+        for entry in ({"url": ""}, {"text": "hello", "src": "assets/audio/hello.mp3"}):
+            with self.subTest(entry=entry):
+                github.pr_file_json.side_effect = [manifest, manifest, [entry]]
+                with self.assertRaisesRegex(meme_hash.BotError, 'data/naiwa/static.json entry #0: "url"'):
+                    meme_hash.new_data_urls(github, pr)
+
+    def test_manifest_failure_does_not_silently_skip_image_checks(self):
+        github = Mock()
+        github.get_pr_files.return_value = [{"filename": "data/naiwa/static.json", "status": "added"}]
+        pr = {
+            "number": 9, "base": {"sha": "b" * 40},
+            "head": {"sha": "a" * 40, "repo": {"full_name": "contributor/NaiLoong"}},
+        }
+        for manifest in ([], [{"subcategories": []}], [{"subcategories": [{"file": "../other.json"}]}]):
+            with self.subTest(manifest=manifest):
+                github.pr_file_json.return_value = manifest
+                with self.assertRaisesRegex(meme_hash.BotError, "data/manifest.json"):
+                    meme_hash.new_data_urls(github, pr)
+        github.pr_file_json.side_effect = meme_hash.BotError("manifest read failed")
+        with self.assertRaisesRegex(meme_hash.BotError, "manifest read failed"):
+            meme_hash.new_data_urls(github, pr)
+
+    def test_code_only_pr_needs_no_manifest_or_image_reads(self):
+        github = Mock()
+        github.get_pr_files.return_value = [{"filename": "assets/js/app.js", "status": "modified"}]
+        pr = {
+            "number": 9, "base": {"sha": "b" * 40},
+            "head": {"sha": "a" * 40, "repo": {"full_name": "contributor/NaiLoong"}},
+        }
+        self.assertEqual(meme_hash.new_data_urls(github, pr), [])
+        github.pr_file_json.assert_not_called()
+
+    def test_url_and_tag_revision_tracks_removed_reference_at_fixed_commits(self):
+        old_url = f"owner/{'a' * 40}/old.gif"
+        new_url = f"owner/{'b' * 40}/renamed.gif"
+        manifest = [{"id": "naiwa", "subcategories": [{"id": "animated", "file": "naiwa/animated.json"}]}]
+        github = Mock()
+        github.get_pr_files.return_value = [{"filename": "data/naiwa/animated.json", "status": "modified"}]
+        github.pr_file_json.side_effect = [manifest, manifest,
+            [{"title": "旧标题", "url": old_url, "tags": [0]}],
+            [{"title": "新标题", "url": new_url, "tags": [1]}],
+        ]
+        changes = meme_hash.pr_data_changes(github, {
+            "number": 7, "base": {"sha": "c" * 40},
+            "head": {"sha": "d" * 40, "repo": {"full_name": "owner/NaiLoong"}},
+        })
+        self.assertEqual(changes["urls"], [f"https://github.com/owner/NaiLoong/blob/{'b' * 40}/renamed.gif"])
+        self.assertEqual(changes["removed_urls"], [f"https://github.com/owner/NaiLoong/blob/{'a' * 40}/old.gif"])
+        self.assertEqual(github.pr_file_json.call_args_list[-1].args[-1], "d" * 40)
+
+    def test_moving_entry_between_categories_does_not_add_a_new_image(self):
+        manifest = [{"id": "naiwa", "subcategories": [
+            {"id": "first", "file": "naiwa/first.json"},
+            {"id": "second", "file": "naiwa/second.json"},
+        ]}]
+        entry = {"title": "a", "url": f"owner/{'a' * 40}/image.png", "tags": [0]}
+        github = Mock()
+        github.get_pr_files.return_value = [
+            {"filename": "data/naiwa/first.json", "status": "modified"},
+            {"filename": "data/naiwa/second.json", "status": "modified"},
+        ]
+        github.pr_file_json.side_effect = [manifest, manifest, [entry], [], [], [entry]]
+        changes = meme_hash.pr_data_changes(github, {
+            "number": 7, "base": {"sha": "c" * 40},
+            "head": {"sha": "d" * 40, "repo": {"full_name": "owner/NaiLoong"}},
+        })
+        self.assertEqual(changes["urls"], [])
+        self.assertEqual(changes["removed_urls"], [])
+        self.assertIn("条目分类或文件迁移：1 条", meme_hash.pr_change_summary(changes))
+
+    def test_pr_head_changed_during_file_listing_fails(self):
+        github = self.github()
+        github.paginated = Mock(return_value=[])
+        with patch.object(github, "request", side_effect=[
+            {"head": {"sha": "a" * 40}}, {"head": {"sha": "b" * 40}},
+        ]):
+            with self.assertRaisesRegex(meme_hash.BotError, "changed while checking"):
+                github.get_pr_files(7, expected_head_sha="a" * 40)
+
+    def test_public_image_request_does_not_send_github_token(self):
+        response = Mock()
+        response.geturl.return_value = "https://raw.githubusercontent.com/contributor/NaiLoong/image/test.png"
+        response.headers = {"Content-Type": "image/png"}
+        response.read.return_value = b"\x89PNG\r\n\x1a\n"
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "test-token"}), patch.object(
+            meme_hash, "urlopen", return_value=response
+        ) as download:
+            meme_hash.fetch_image_bytes(response.geturl())
+        request = download.call_args.args[0]
+        self.assertIsNone(request.get_header("Authorization"))
+
+
+class HashRevisionTests(unittest.TestCase):
+    digest_a = "a" * 64
+    digest_b = "b" * 64
+    url_a = "https://github.com/user-attachments/assets/one"
+    url_b = "https://github.com/user-attachments/assets/two"
+
+    def pending_comment(self, two_images=True):
+        state = meme_hash.empty_state()
+        hashes = [self.digest_a, self.digest_b] if two_images else [self.digest_a]
+        state["comments"]["31"] = {"hashes": hashes, "status": "unprocessed", "pr_number": None}
+        for digest in hashes:
+            state["reserved"][digest] = {
+                "kind": "issue_comment", "comment_id": "31", "pr_number": None,
+            }
+        body = f"投稿说明\n![one]({self.url_a})"
+        if two_images:
+            body += f'\n<img width="120" src="{self.url_b}">\n尾部说明'
+        return MemoryGitHub(state, body)
+
+    def process(self, github, hashes, number=7, body="", removed_hashes=None):
+        changes = {
+            "urls": [f"new-{index}" for index in range(len(hashes))],
+            "removed_urls": [f"old-{index}" for index in range(len(removed_hashes or []))],
+            "head_sha": "c" * 40,
+        }
+        attachments = {self.url_a: self.digest_a, self.url_b: self.digest_b}
+
+        def fork_hashes(urls):
+            return [removed_hashes[int(url.split("-")[1])] if url.startswith("old-")
+                    else hashes[int(url.split("-")[1])] for url in urls]
+
+        with patch.object(meme_hash, "pr_data_changes", return_value=changes), \
+                patch.object(meme_hash, "hash_fork_urls", side_effect=fork_hashes), \
+                patch.object(meme_hash, "hash_attachment_urls", side_effect=lambda urls: [attachments[url] for url in urls]):
+            meme_hash.process_pull_request(github, {"number": number, "base": {"ref": "main"}, "body": body})
+
+    def test_ingested_source_rename_with_labels_passes_without_reserving_hash(self):
+        for archived in (False, True):
+            with self.subTest(archived=archived):
+                github = MemoryGitHub()
+                if archived:
+                    github.read_contents = lambda path, ref: (self.digest_a + "\n", None)
+                else:
+                    github.state["ingested"] = [self.digest_a]
+                self.process(github, [self.digest_a], removed_hashes=[self.digest_a])
+                self.assertEqual(github.state["reserved"], {})
+                self.assertEqual(github.state["pull_requests"], {})
+                self.assertIn("check passed", github.calls[-1][2])
+
+    def test_ingested_duplicate_addition_and_extra_duplicate_remain_blocked(self):
+        for new_hashes, removed_hashes in (([self.digest_a], []),
+                                           ([self.digest_a, self.digest_a], [self.digest_a]),
+                                           ([self.digest_a], [self.digest_b])):
+            with self.subTest(new_hashes=new_hashes, removed_hashes=removed_hashes):
+                github = MemoryGitHub()
+                github.state["ingested"] = [self.digest_a]
+                with self.assertRaises(meme_hash.BotError):
+                    self.process(github, new_hashes, removed_hashes=removed_hashes)
+                self.assertEqual(github.state["reserved"], {})
+                self.assertIn("本次 PR 变更摘要", github.calls[-1][2])
+
+    def test_partial_takeover_removes_only_conflicting_image_and_transfers_reservation(self):
+        github = self.pending_comment()
+        self.process(github, [self.digest_a])
+        self.assertEqual(meme_hash.parse_issue_image_urls(github.comment["body"]), [self.url_b])
+        self.assertIn("投稿说明", github.comment["body"])
+        self.assertIn("尾部说明", github.comment["body"])
+        self.assertEqual(github.state["reserved"][self.digest_a]["pr_number"], 7)
+        self.assertIsNone(github.state["reserved"][self.digest_b]["pr_number"])
+        self.assertEqual(github.state["comments"]["31"]["hashes"], [self.digest_b])
+        self.assertEqual(github.state["comments"]["31"]["status"], "unprocessed")
+        self.assertIn("已接管评论中的 1 张图片", github.calls[-1][2])
+
+    def test_html_takeover_removes_entire_tag(self):
+        github = self.pending_comment()
+        self.process(github, [self.digest_b])
+        self.assertNotIn("<img", github.comment["body"])
+        self.assertEqual(meme_hash.parse_issue_image_urls(github.comment["body"]), [self.url_a])
+
+    def test_failed_pr_does_not_take_over_any_comment_image(self):
+        github = self.pending_comment()
+        github.state["reserved"][self.digest_b] = {"kind": "pull_request", "pr_number": 8}
+        original = github.comment["body"]
+        with self.assertRaisesRegex(meme_hash.BotError, "another PR"):
+            self.process(github, [self.digest_a, self.digest_b])
+        self.assertEqual(github.comment["body"], original)
+        self.assertIsNone(github.state["reserved"][self.digest_a]["pr_number"])
+
+    def test_second_pr_cannot_take_over_a_claimed_comment(self):
+        github = self.pending_comment(two_images=False)
+        claim = meme_hash.issue_comment_url(31)
+        self.process(github, [self.digest_a], number=7, body=claim)
+        with self.assertRaisesRegex(meme_hash.BotError, "another PR"):
+            self.process(github, [self.digest_a], number=8)
+        self.assertEqual(github.state["reserved"][self.digest_a]["pr_number"], 7)
+
+    def test_comment_edit_failure_keeps_takeover_intent_and_retry_completes(self):
+        github = self.pending_comment()
+        with patch.object(github, "edit_issue_comment", side_effect=meme_hash.GitHubAPIError(500, "retry")):
+            with self.assertRaises(meme_hash.GitHubAPIError):
+                self.process(github, [self.digest_a])
+        self.assertEqual(github.state["reserved"][self.digest_a]["pr_number"], 7)
+        self.assertTrue(github.state["comments"]["31"]["takeovers"][0]["pending"])
+        self.process(github, [self.digest_a])
+        self.assertEqual(meme_hash.parse_issue_image_urls(github.comment["body"]), [self.url_b])
+        self.assertFalse(github.state["comments"]["31"]["takeovers"][0]["pending"])
+
+    def test_restore_api_failure_is_completed_before_reopened_pr_reclaims(self):
+        github = self.pending_comment()
+        self.process(github, [self.digest_a])
+        with patch.object(github, "edit_issue_comment", side_effect=meme_hash.GitHubAPIError(500, "retry")):
+            with self.assertRaises(meme_hash.GitHubAPIError):
+                meme_hash.close_pull_request(github, {"number": 7, "merged": False})
+        self.process(github, [self.digest_a])
+        self.assertEqual(meme_hash.parse_issue_image_urls(github.comment["body"]), [self.url_b])
+        self.assertEqual(github.state["reserved"][self.digest_a]["pr_number"], 7)
+
+    def test_missing_comment_does_not_block_higher_priority_pr(self):
+        github = self.pending_comment()
+        with patch.object(github, "get_issue_comment", side_effect=meme_hash.GitHubAPIError(404, "deleted")):
+            self.process(github, [self.digest_a])
+        self.assertEqual(github.state["reserved"][self.digest_a]["pr_number"], 7)
+        self.assertNotIn(self.digest_b, github.state["reserved"])
+
+    def test_comment_submission_keeps_first_comment_or_pr_priority(self):
+        for first_kind in ("issue_comment", "pull_request"):
+            with self.subTest(first_kind=first_kind):
+                github = MemoryGitHub(body=f"![one]({self.url_a})")
+                github.state["reserved"][self.digest_a] = {
+                    "kind": first_kind, "comment_id": "30" if first_kind == "issue_comment" else None,
+                    "pr_number": 7 if first_kind == "pull_request" else None,
+                }
+                with patch.object(meme_hash, "hash_attachment_urls", return_value=[self.digest_a]):
+                    meme_hash.handle_issue_comment(github, {
+                        "issue": {"number": 1}, "action": "created", "comment": {"id": 31},
+                    })
+                self.assertEqual(github.state["comments"]["31"]["status"], "duplicate")
+                self.assertEqual(github.state["reserved"][self.digest_a]["kind"], first_kind)
+
+    def test_unmerged_close_and_removed_pr_image_restore_comment_and_reservation(self):
+        for close in (False, True):
+            with self.subTest(close=close):
+                github = self.pending_comment()
+                self.process(github, [self.digest_a])
+                if close:
+                    meme_hash.close_pull_request(github, {"number": 7, "merged": False})
+                else:
+                    self.process(github, [])
+                self.assertEqual(set(meme_hash.parse_issue_image_urls(github.comment["body"])),
+                                 {self.url_a, self.url_b})
+                self.assertIsNone(github.state["reserved"][self.digest_a]["pr_number"])
+                self.assertEqual(github.state["comments"]["31"]["hashes"], [self.digest_a, self.digest_b])
+
+    def test_partial_pr_update_restores_only_withdrawn_image(self):
+        github = self.pending_comment()
+        self.process(github, [self.digest_a, self.digest_b])
+        self.process(github, [self.digest_a])
+        self.assertEqual(meme_hash.parse_issue_image_urls(github.comment["body"]), [self.url_b])
+        self.assertEqual(github.state["reserved"][self.digest_a]["pr_number"], 7)
+        self.assertIsNone(github.state["reserved"][self.digest_b]["pr_number"])
+
+    def test_merge_preserves_removed_attachment_link_and_other_pending_image(self):
+        github = self.pending_comment()
+        self.process(github, [self.digest_a])
+        meme_hash.close_pull_request(github, {"number": 7, "merged": True})
+        self.assertEqual(github.state["ingested"], [self.digest_a])
+        self.assertEqual(meme_hash.parse_issue_image_urls(github.comment["body"]), [self.url_b])
+        self.assertIn(f"[one]({self.url_a})", github.comment["body"])
+        self.assertEqual(github.state["comments"]["31"]["status"], "unprocessed")
+        self.assertIsNone(github.state["reserved"][self.digest_b]["pr_number"])
+
+    def test_full_takeover_merge_folds_comment_and_close_retry_is_idempotent(self):
+        github = self.pending_comment()
+        self.process(github, [self.digest_a, self.digest_b])
+        with patch.object(github, "edit_issue_comment", side_effect=meme_hash.GitHubAPIError(500, "retry")):
+            with self.assertRaises(meme_hash.GitHubAPIError):
+                meme_hash.close_pull_request(github, {"number": 7, "merged": True})
+        meme_hash.close_pull_request(github, {"number": 7, "merged": True})
+        self.assertEqual(github.state["ingested"], [self.digest_a, self.digest_b])
+        self.assertEqual(meme_hash.parse_issue_image_urls(github.comment["body"]), [])
+        self.assertIn(self.url_a, github.comment["body"])
+        self.assertIn(self.url_b, github.comment["body"])
+        self.assertEqual(github.calls[-1][0], "minimize")
+
+    def test_two_prs_can_process_separate_images_of_one_comment(self):
+        github = self.pending_comment()
+        self.process(github, [self.digest_a], number=7)
+        self.process(github, [self.digest_b], number=8)
+        meme_hash.close_pull_request(github, {"number": 7, "merged": False})
+        self.assertEqual(meme_hash.parse_issue_image_urls(github.comment["body"]), [self.url_a])
+        self.assertIsNone(github.state["reserved"][self.digest_a]["pr_number"])
+        self.assertEqual(github.state["reserved"][self.digest_b]["pr_number"], 8)
+        meme_hash.close_pull_request(github, {"number": 8, "merged": True})
+        self.assertEqual(meme_hash.parse_issue_image_urls(github.comment["body"]), [self.url_a])
+        self.assertEqual(github.state["comments"]["31"]["status"], "unprocessed")
+
+    def test_restored_image_does_not_change_another_pr_exact_comment_claim(self):
+        github = self.pending_comment()
+        self.process(github, [self.digest_a], number=7)
+        self.process(github, [self.digest_b], number=8, body=meme_hash.issue_comment_url(31))
+        meme_hash.close_pull_request(github, {"number": 7, "merged": False})
+        self.assertEqual(github.state["comments"]["31"]["hashes"], [self.digest_b])
+        self.process(github, [self.digest_b], number=8, body=meme_hash.issue_comment_url(31))
+        meme_hash.close_pull_request(github, {"number": 8, "merged": True})
+        self.assertEqual(meme_hash.parse_issue_image_urls(github.comment["body"]), [self.url_a])
+        self.assertEqual(github.state["comments"]["31"]["hashes"], [self.digest_a])
+        self.assertEqual(github.state["comments"]["31"]["status"], "unprocessed")
+
+    def test_remaining_claim_merges_while_takeover_is_still_processing(self):
+        github = self.pending_comment()
+        self.process(github, [self.digest_a], number=7)
+        self.process(github, [self.digest_b], number=8, body=meme_hash.issue_comment_url(31))
+        meme_hash.close_pull_request(github, {"number": 8, "merged": True})
+        self.assertEqual(meme_hash.parse_issue_image_urls(github.comment["body"]), [])
+        self.assertIn(self.url_b, github.comment["body"])
+        self.assertEqual(github.state["comments"]["31"]["status"], "transferred")
+        self.assertEqual(github.state["reserved"][self.digest_a]["pr_number"], 7)
+        meme_hash.close_pull_request(github, {"number": 7, "merged": False})
+        self.assertEqual(meme_hash.parse_issue_image_urls(github.comment["body"]), [self.url_a])
+
+    def test_returned_image_takeover_keeps_another_pr_claim_intact(self):
+        github = self.pending_comment()
+        self.process(github, [self.digest_a], number=7)
+        self.process(github, [self.digest_b], number=8, body=meme_hash.issue_comment_url(31))
+        meme_hash.close_pull_request(github, {"number": 7, "merged": False})
+        self.process(github, [self.digest_a], number=9)
+        self.assertEqual(github.state["comments"]["31"]["pr_number"], 8)
+        self.assertEqual(github.state["reserved"][self.digest_b]["pr_number"], 8)
+        self.process(github, [self.digest_b], number=8, body=meme_hash.issue_comment_url(31))
+        meme_hash.close_pull_request(github, {"number": 8, "merged": True})
+        self.assertEqual(github.state["reserved"][self.digest_a]["pr_number"], 9)
+
+    def test_comment_with_all_images_transferred_cannot_be_claimed_by_empty_pr(self):
+        github = self.pending_comment(two_images=False)
+        self.process(github, [self.digest_a], number=7)
+        with self.assertRaisesRegex(meme_hash.BotError, "already being processed"):
+            self.process(github, [], number=8, body=meme_hash.issue_comment_url(31))
+        self.assertEqual(github.state["reserved"][self.digest_a]["pr_number"], 7)
+
+    def test_deleted_transferred_comment_keeps_only_pr_hash_until_close(self):
+        for merged in (False, True):
+            with self.subTest(merged=merged):
+                github = self.pending_comment()
+                self.process(github, [self.digest_a])
+                meme_hash.handle_deleted_issue_comment(github, 31)
+                self.assertNotIn(self.digest_b, github.state["reserved"])
+                self.assertEqual(github.state["reserved"][self.digest_a]["pr_number"], 7)
+                with patch.object(github, "get_issue_comment", side_effect=meme_hash.GitHubAPIError(404, "deleted")):
+                    meme_hash.close_pull_request(github, {"number": 7, "merged": merged})
+                self.assertNotIn("31", github.state["comments"])
+                self.assertEqual(github.state["reserved"], {})
+
+    def test_no_image_pr_posts_summary_and_failure_retains_summary(self):
+        github = MemoryGitHub()
+        self.process(github, [])
+        self.assertIn("本次 PR 变更摘要", github.calls[-1][2])
+        with patch.object(meme_hash, "pr_data_changes", return_value={"urls": ["one"], "head_sha": "c" * 40}), \
+                patch.object(meme_hash, "hash_fork_urls", side_effect=meme_hash.ImageTooLargeError("5 MB")):
+            with self.assertRaises(meme_hash.ImageTooLargeError):
+                meme_hash.handle_event(github, "pull_request_target", {
+                    "action": "opened", "pull_request": {"number": 7, "base": {"ref": "main"}},
+                })
+        self.assertIn("本次 PR 变更摘要", github.calls[-1][2])
+        self.assertIn("5 MB", github.calls[-1][2])
+
+
+class PRSummaryTests(unittest.TestCase):
+    def test_insert_and_reorder_do_not_report_false_modifications(self):
+        first = {"title": "a", "url": f"owner/{'a' * 40}/a.png", "tags": [0]}
+        second = {"title": "b", "url": f"owner/{'a' * 40}/b.png", "tags": [1]}
+        added = {"title": "c", "url": f"owner/{'a' * 40}/c.png", "tags": [0]}
+        summary = meme_hash.pr_change_summary({
+            "categories": [("data/naiwa/static.json", "data/naiwa/static.json",
+                            [first, second], [added, second, first])],
+        })
+        self.assertIn("新增条目：1 条", summary)
+        self.assertNotIn("修改条目", summary)
+        self.assertNotIn("条目标签修改", summary)
+
+    def test_summary_covers_roles_categories_tags_and_configs(self):
+        before = {"id": "naiwa", "name": "奶蛙", "tags": "naiwa/custom-tags.json",
+                  "subcategories": [{"id": "old", "file": "naiwa/static.json"}]}
+        after = {**before, "name": "蛙", "subcategories": [
+            {"id": "new", "file": "naiwa/static.json"}
+        ]}
+        added = {"id": "naidan", "name": "奶蛋", "subcategories": []}
+        summary = meme_hash.pr_change_summary({
+            "base_manifest": [before], "head_manifest": [after, added],
+            "files": [{"filename": "data/naiwa/custom-tags.json"},
+                      {"filename": "data/tag-translations.json"},
+                      {"filename": "data/pet.json"}, {"filename": "docs/example.md"}],
+            "head_sha": "c" * 40,
+        })
+        for text in ("新增角色：1 个", "修改角色：1 个", "新增分类：1 个", "删除分类：1 个",
+                     "标签定义或翻译文件变更：2 个", "桌宠配置变更：1 个", "c" * 40, "Data Linter"):
+            self.assertIn(text, summary)
+
+    def test_status_updates_same_marked_bot_comment(self):
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "test-token"}):
+            github = meme_hash.GitHub()
+        with patch.object(github, "get_issue_comments", return_value=[{
+            "id": 123, "body": "<!-- nai-meme-hash-pr:7 -->\nold check failed",
+        }]), patch.object(github, "edit_issue_comment") as edit, \
+                patch.object(github, "issue_comment") as create:
+            github.pr_status_comment(7, "new check passed")
+        edit.assert_called_once_with(123, "<!-- nai-meme-hash-pr:7 -->\nnew check passed")
+        create.assert_not_called()
 
 
 if __name__ == "__main__":
